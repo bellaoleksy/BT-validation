@@ -1,0 +1,560 @@
+---
+title: "Benthotorch_exploratory_saved180211 -- REFERENCE ONLY"
+author: "Bella Oleksy"
+date: "2/11/2019"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+knitr::opts_chunk$set(fig.width=6, fig.height=6) 
+```
+**I chopped this code off the bottom of "benthotorch_validation_IAO_180702_figuresfiles.Rmd". Lots of code is broken, but not really needed anyway since this was during me and Whitney's data exploration phase. Just wanted to keep this around for reference!!
+
+
+# Data loading
+Loaded data and condensed mondo file into something managable for this analysis. 
+
+```{r loading data, warning=FALSE, message=FALSE }
+
+benthotorch_validation_raw <- read.csv("data/MassCalcs_20180604.csv")
+
+library(dplyr) # for tidy data!
+library(skimr) # for skim() function
+library(knitr) # to print table in R markdown
+library(ggplot2) # for plots
+library(kableExtra) # for making tables pretty/legible
+library(lmodel2) # for type II regression model
+library(scales) # to add percentages to plots and pretty_breaks()
+glimpse(benthotorch_validation_raw)
+
+benthotorch_validation_short <- benthotorch_validation_raw %>%
+  select(run_ID,pigment_ID, area, bentho_green,bentho_green_percent,
+         bentho_diatom,bentho_diatom_percent,bentho_cyano,bentho_cyano_percent,
+         bentho_totalchla, mass_ug_cm2, perc_green_UPLC,
+         perc_diat_UPLC, perc_cyano_candidate, investigator) # select only the variables of interest
+
+skim_object1 <- skim(benthotorch_validation_short) %>%
+  filter(stat=="hist") #create skim table
+```
+
+# Summary of data
+
+
+```{r subset, results="hide" }
+#Fuco data subset
+data_fuco <- benthotorch_validation_short %>%
+  filter(pigment_ID=="fuco") %>%
+  filter(mass_ug_cm2 < 1) %>% # extreme removing outliers
+  mutate(log_UPLC_diat = log10(mass_ug_cm2 + 1 -min(mass_ug_cm2)),
+         # translate and then transform because of negative values
+         log_UPLC_diat_perc = log10(perc_diat_UPLC + 1 -min(perc_diat_UPLC)),
+         log_BT_diat = log10(bentho_diatom + 1 -min(bentho_diatom)),
+         log_BT_diat_perc = log10(bentho_diatom_percent + 1 -min(bentho_diatom_percent))) %>%
+  select(run_ID, pigment_ID,log_UPLC_diat, log_UPLC_diat_perc,  log_BT_diat, log_BT_diat_perc, investigator)
+
+#Chl a total data subset
+data_chla_total <- benthotorch_validation_short %>%
+  filter(pigment_ID=="chla_total") %>%
+  mutate(log_UPLC_chla = log10(mass_ug_cm2 + 1-min(mass_ug_cm2)),
+         log_BT_chla = log10(bentho_totalchla + 1-min(bentho_totalchla)))
+
+#Green subset
+data_chlb_total <- benthotorch_validation_short %>%
+  filter(pigment_ID=="chlb_total") %>%
+  filter(mass_ug_cm2 < 0.15) %>% #removing extreme outliers
+  mutate(sqrt_BT_green = sqrt(bentho_green),
+         sqrt_UPLC_chlb = sqrt(mass_ug_cm2),
+         sqrt_BT_green_perc = sqrt(bentho_green_percent),
+         sqrt_UPLC_chlb_perc = sqrt(perc_green_UPLC)) %>%
+  select(run_ID, pigment_ID, mass_ug_cm2, sqrt_BT_green, sqrt_UPLC_chlb, sqrt_BT_green_perc,  sqrt_UPLC_chlb_perc, bentho_green_percent,investigator)
+
+
+#Cyano subset all
+data_myxo_full <- benthotorch_validation_short %>%
+  filter(pigment_ID=="myxo") %>%
+  filter(mass_ug_cm2 < 0.15) %>% # removing extreme high outliers
+  mutate(sqrt_BT_cyano = sqrt(bentho_cyano),
+         sqrt_BT_cyano_perc = sqrt(bentho_cyano_percent),
+         sqrt_UPLC_myxo = sqrt(mass_ug_cm2),
+         sqrt_UPLC_myxo_perc = sqrt(perc_cyano_candidate)) %>%
+  select(run_ID, pigment_ID, sqrt_BT_cyano, sqrt_BT_cyano_perc, sqrt_UPLC_myxo, sqrt_UPLC_myxo_perc, investigator)
+
+
+#Cyano subset - nonzero BT values
+data_myxo_nonzeros <- benthotorch_validation_short %>%
+  filter(pigment_ID=="myxo") %>%
+  filter(mass_ug_cm2 < 0.15) %>% # removing extreme outliers
+  filter(mass_ug_cm2 > 0) %>%
+  mutate(sqrt_BT_cyano = sqrt(bentho_cyano),
+         sqrt_BT_cyano_perc = sqrt(bentho_cyano_percent),
+         sqrt_UPLC_myxo = sqrt(mass_ug_cm2),
+         sqrt_UPLC_myxo_perc = sqrt(perc_cyano_candidate)) %>%
+  select(run_ID, pigment_ID, sqrt_BT_cyano, sqrt_BT_cyano_perc, sqrt_UPLC_myxo, sqrt_UPLC_myxo_perc)
+```
+
+
+#Below = OLD code (exploratory)
+# (exploratory) Fuco analysis (exploratory)
+
+Log/sqrt tranforms helped, somewhat.
+
+###Type II linear regression with bentho_diatom and log mass_ug for fuco
+```{r fuco lm mass log, echo=FALSE, include=FALSE}
+lm_fuco_mass <- lmodel2(log_mass_fuco ~ bentho_diatom, data=data_fuco, range.y=NULL,range.x=NULL,nperm=99)
+lm_fuco_mass
+
+qplot(bentho_diatom, log_mass_fuco,  data=data_fuco) +  geom_smooth(method='lm', se=FALSE)
+
+```
+Data not printed because model not statistically significant.
+
+
+
+###Fuco as a proportion of total chla (log) versus bentho_diatom
+Type II linear regression with bentho_diatom and log(fuco [mass]/chla total [mass])
+
+```{r fuco lm perc fuco of chla total to BT_diat, echo=FALSE}
+lm_fuco_model1 <- lmodel2(bentho_diatom~log_perc_diat_UPLC, data=data_fuco, range.y=NULL,range.x=NULL,nperm=99)
+lm_fuco_model1
+
+qplot( log_perc_diat_UPLC,bentho_diatom, data=data_fuco) + geom_smooth(method='lm', se=FALSE)
+```
+
+Positive correlation, but a fair amount of scatter.
+
+```{r fuco model 1 pettitt test, echo=FALSE}
+##Pettit test: Benthotorch rows ordered in terms of UPLC values 
+
+fuco_model1_trim <- data_fuco %>%
+  select(log_perc_diat_UPLC, bentho_diatom) %>%
+  arrange(log_perc_diat_UPLC)
+
+
+fuco_model1_trim2=fuco_model1_trim[,2]
+
+library(trend)
+pettitt.test(fuco_model1_trim2) #Changepoint at 44 datapoint (0.05); p-value 1.35e-14 
+
+fuco_model1_trim[31,] 
+#Pettitt test detecting a change at bentho_diatom 0.41, log_perc_diat_UPLC 0.05
+
+
+##Investigating significant changepoint
+
+Fuco_model1_low=subset(data_fuco, log_perc_diat_UPLC<0.05141374)
+Fuco_model1_high=subset(data_fuco, log_perc_diat_UPLC>0.05141374)
+
+# Regressions
+
+FucoMod1=lm(bentho_diatom~log_perc_diat_UPLC, data=data_fuco)
+FucoMod1_low=lm(bentho_diatom~log_perc_diat_UPLC, data=Fuco_model1_low)
+FucoMod1_high=lm(bentho_diatom~log_perc_diat_UPLC, data=Fuco_model1_high)
+
+plot(data_fuco$log_perc_diat_UPLC,data_fuco$bentho_diatom,
+     main="Bentho_diatom vs log(% diatom UPLC) with changepoint at 0.05",
+     ylab="Benthotorch Diatoms (ug/cm2)",
+     xlab="[Log] Percent Diatoms of Total")
+abline(FucoMod1, col="green")
+abline(FucoMod1_low, col="blue")
+abline(FucoMod1_high, col="red")
+```
+
+Marginally statistically significant breakpoint (0.07). The green and red lines correspond to the full model and "high" model (respectively) while the blue line corresponds to the subset of data where log_perc_diat_UPLC < 0.05141374 (the identified breakpoint).
+
+
+###Fuco as a proportion of total chla (log) versus (log) bentho_diatom
+Type II linear regression with log(bentho_diatom) and log(fuco [mass]/chla total [mass])
+
+```{r fuco lm perc fuco of chla total to BT_diat log, echo=FALSE,include=FALSE}
+lm_fuco_fuco_to_total_log <- lmodel2(log_perc_diat_UPLC ~ log_BT_diat, data=data_fuco, range.y=NULL,range.x=NULL,nperm=99)
+lm_fuco_fuco_to_total_log
+
+qplot(log_BT_diat, log_perc_diat_UPLC, data=data_fuco) + geom_smooth(method='lm', se=FALSE)
+```
+Not printed because model not significant.
+
+
+###Fuco as a proportion of total chla (log) versus bentho_diatom_percent
+Type II linear regression with bentho_diatom_percent and log(fuco [mass]/chla total [mass])
+This might be a bit more like comparing "apples to apples"
+
+```{r fuco lm perc fuco of chla to perc diatom BT, echo=FALSE,include=FALSE}
+lm_fuco_perc_to_perc <- lmodel2(log_perc_diat_UPLC ~ bentho_diatom_percent, data=data_fuco, range.y=NULL,range.x=NULL,nperm=99)
+lm_fuco_perc_to_perc
+
+qplot(bentho_diatom_percent, log_perc_diat_UPLC, data=data_fuco) + geom_smooth(method='lm', se=FALSE)
+```
+Not printed because no significant relationship found.
+
+
+###Fuco as a proportion of total chla (not log transformed) versus bentho_diatom_percent
+Type II linear regression with bentho_diatom_percent and fuco [mass]/chla total [mass]
+This might be a bit more like comparing "apples to apples"
+
+```{r fuco lm perc fuco of chla to perc diatom BT non-log transformed, echo=FALSE, include=FALSE}
+lm_fuco_perc_to_perc_2 <- lmodel2(perc_diat_UPLC ~ bentho_diatom_percent, data=data_fuco, range.y=NULL,range.x=NULL,nperm=99)
+lm_fuco_perc_to_perc_2
+
+qplot(bentho_diatom_percent, perc_diat_UPLC, data=data_fuco) + geom_smooth(method='lm', se=FALSE)
+```
+
+Pretty much zero relationship here, so not printed. 
+
+
+###Fuco as a proportion of total chla (not log transformed) versus bentho_diatom
+```{r fuco lm perc fuco of chla to BT diat, echo=FALSE}
+lm_fuco_model2 <- lmodel2(bentho_diatom~perc_diat_UPLC, data=data_fuco, range.y=NULL,range.x=NULL,nperm=99)
+lm_fuco_model2
+
+qplot(perc_diat_UPLC,bentho_diatom, data=data_fuco) + geom_smooth(method='lm', se=FALSE)
+```
+Ahhh??! Best relationship yet... But I have a feeling it is just those few high values that are driving this relationship. Let's run a Pettitt test...
+
+
+```{r fuco model 2 pettitt test, echo=FALSE}
+
+fuco_model2_trim <- data_fuco %>%
+  select(perc_diat_UPLC, bentho_diatom) %>%
+  arrange(perc_diat_UPLC)##Pettit test: Benthotorch rows ordered in terms of UPLC values 
+
+
+
+fuco_model2_trim2=fuco_model2_trim[,2] #Pull out just Benthotorch column
+
+library(trend)
+pettitt.test(fuco_model2_trim2) #Changepoint at 31 datapoint; p-value 0.07 
+
+fuco_model2_trim[31,]
+#Pettitt test detecting a change at bentho_diatom 0.41, perc_diat_UPLC 0.12
+
+
+##Investigating significant changepoint
+
+Fuco_model2_low=subset(data_fuco, perc_diat_UPLC<0.12)
+Fuco_model2_high=subset(data_fuco, perc_diat_UPLC>0.12)
+
+# Regressions
+
+FucoMod2=lm(bentho_diatom~perc_diat_UPLC, data=data_fuco)
+FucoMod2_low=lm(bentho_diatom~perc_diat_UPLC, data=Fuco_model2_low)
+
+FucoMod2_high=lm(bentho_diatom~perc_diat_UPLC, data=Fuco_model2_high)
+summary(FucoMod2_high)
+
+
+plot(data_fuco$perc_diat_UPLC,data_fuco$bentho_diatom,
+     main="Bentho_diatom vs % Diatoms (UPLC) with changepoint at 0.12",
+     ylab="Benthotorch Diatoms (ug/cm2)",
+     xlab="% Diatoms (UPLC)")
+abline(FucoMod2, col="green")
+abline(FucoMod2_low, col="blue")
+abline(FucoMod2_high, col="red")
+```
+
+Not a statistically significant breakpoint (p=0.07). Green line is full model, blue line is "low" model, and red line is "high" model.
+
+###Take note of the linear model summaries for the "low" and "high" bentho_diatom vs perc_diat_UPLC models.
+```{r subset fuco model 2 summaries, echo=FALSE}
+#Summary of Fuco Model with perc_diat_UPLC < 0.12
+summary(FucoMod2_low)
+
+#Summary of Fuco Model with perc_diat_UPLC > 0.12
+summary(FucoMod2_high)
+```
+
+
+
+------------------------------------- 
+
+
+
+# (exploratory) Chl a total analysis  (exploratory) 
+###includes a-prime I and II values and pheophytin
+###((dropping the analysis on just chla without primes and pheophytin))
+
+
+
+###Log mass_chla total verus bentho_total
+```{r chla total lm mass 1, echo=FALSE}
+lm_chla_1 <- lmodel2(bentho_totalchla~log_mass_chla_tot, data=data_chla_total, range.y=NULL,range.x=NULL,nperm=99)
+lm_chla_1
+
+qplot(log_mass_chla_tot, bentho_totalchla,   data=data_chla_total) +  geom_smooth(method='lm', se=FALSE)
+```
+
+Yay! Maybe everything isn't horrible! Need to investigate a changepoint because we see a lot of high BT values that don't correspond to high UPLC values. 
+
+
+```{r chla model 1 pettitt test, echo=FALSE}
+
+chla_model1_trim <- data_chla_total %>%
+  select(mass_ug_cm2, bentho_totalchla) %>%
+  arrange(mass_ug_cm2)##Pettit test: Benthotorch rows ordered in terms of UPLC values 
+
+
+
+chla_model1_trim2=chla_model1_trim[,2] #Pull out just Benthotorch column
+
+library(trend)
+pettitt.test(chla_model1_trim2) #Changepoint at 48 datapoint; p-value 0.06 (marginally significant) 
+
+chla_model1_trim[48,]
+#Pettitt test detecting a change at bentho_totalchla 0.04, mass_ug_cm2 0.057
+
+
+##Investigating significant changepoint
+
+Chla_model1_low=subset(data_chla_total, mass_ug_cm2<0.057)
+Chla_model1_high=subset(data_chla_total, mass_ug_cm2>0.057)
+
+# Regressions
+
+ChlaMod1=lm(bentho_totalchla~log_mass_chla_tot, data=data_chla_total)
+ChlaMod1_low=lm(bentho_totalchla~log_mass_chla_tot, data=Chla_model1_low)
+ChlaMod1_high=lm(bentho_totalchla~log_mass_chla_tot, data=Chla_model1_high)
+
+plot(data_chla_total$log_mass_chla_tot,data_chla_total$bentho_totalchla,
+     main="Bentho_Total vs Mass Chla total (UPLC) with changepoint at 0.022",
+     ylab="Benthotorch Total Chla (ug/cm2)",
+     xlab="Mass Total Chla UPLC")
+abline(ChlaMod1, col="green")
+abline(ChlaMod1_low, col="blue")
+abline(ChlaMod1_high, col="red")
+```
+
+The red line refers to the "high" model, and the green line refers to the model with all datapoints. The blue line refers to the "low" model.
+
+###Let's look at the summary of the linear models 
+```{r chl model 1 subset summaries}
+#Summary of "low" model
+summary(ChlaMod1_low)
+
+#Summary of "high" model
+summary(ChlaMod1_high)
+```
+
+
+###Log mass_chla total verus bentho_diatom
+Not really expecting to see a relationship here but exploring that route anyhow. 
+
+```{r chla total lm mass 2, echo=FALSE, include=FALSE}
+lm_chla_mass_total2 <- lmodel2(log_mass_chla_tot ~ bentho_diatom, data=data_chla_total, range.y=NULL,range.x=NULL,nperm=99)
+lm_chla_mass_total2
+
+qplot(bentho_diatom, log_mass_chla_tot,  data=data_chla_total) +  geom_smooth(method='lm', se=FALSE)
+```
+Not printed because no significant relationship.
+
+
+###Log mass_chla total verus bentho_cyano
+Not really expecting to see a relationship here but exploring that route anyhow. 
+
+```{r chla total lm mass 3, echo=FALSE, include=FALSE}
+lm_chla_mass_total3 <- lmodel2(log_mass_chla_tot ~ bentho_cyano, data=data_chla_total, range.y=NULL,range.x=NULL,nperm=99)
+lm_chla_mass_total3
+
+qplot(bentho_cyano, log_mass_chla_tot,  data=data_chla_total) +  geom_smooth(method='lm', se=FALSE)
+```
+Not printed because no significant relationship.
+
+
+
+###Log mass_chla total verus bentho_green
+Not really expecting to see a relationship here but exploring that route anyhow. 
+
+```{r chla total lm mass 4, echo=FALSE}
+chla_model2 <- lmodel2( bentho_green~log_mass_chla_tot, data=data_chla_total, range.y=NULL,range.x=NULL,nperm=99)
+chla_model2
+
+qplot( log_mass_chla_tot,bentho_green,  data=data_chla_total) +  geom_smooth(method='lm', se=FALSE)
+```
+Another very strong relationship. But is it informative? Is chl b just really highly correlated with chla?
+
+
+```{r chla model 2 pettitt test, echo=FALSE}
+
+chla_model2_trim <- data_chla_total %>%
+  select(mass_ug_cm2, bentho_green) %>%
+  arrange(mass_ug_cm2)##Pettit test: Benthotorch rows ordered in terms of UPLC values 
+
+
+
+chla_model2_trim2=chla_model2_trim[,2] #Pull out just Benthotorch column
+
+library(trend)
+pettitt.test(chla_model2_trim2) #Changepoint at 73 datapoint; p-value 0.07 (marginally significant) 
+
+chla_model2_trim[73,]
+#Pettitt test detecting a change at bentho_green 0, mass_ug_cm2 0.13
+
+##Investigating significant changepoint
+
+Chla_model2_low=subset(data_chla_total, mass_ug_cm2<0.13)
+Chla_model2_high=subset(data_chla_total, mass_ug_cm2>0.13)
+
+# Regressions
+
+ChlaMod2=lm(bentho_green~mass_ug_cm2, data=data_chla_total)
+ChlaMod2_low=lm(bentho_green~mass_ug_cm2, data=Chla_model1_low)
+ChlaMod2_high=lm(bentho_green~mass_ug_cm2, data=Chla_model1_high)
+
+plot(data_chla_total$mass_ug_cm2,data_chla_total$bentho_green,
+     main="Bentho_Green vs Mass Chla total (UPLC) with changepoint at 0.13",
+     ylab="Benthotorch_Green (ug/cm2)",
+     xlab="Mass Total Chla UPLC")
+abline(ChlaMod1, col="green")
+abline(ChlaMod1_low, col="blue")
+abline(ChlaMod1_high, col="red")
+
+```
+
+A breakpoint is identified at bentho_green = 0/mass_ug_cm2, which is not informative at all...
+
+
+#(exploratory) Questions about green algae for Discussion Section
+```{r community composition}
+
+####How many of our sites are "high" greens? Higher than the median
+curious <- data_chlb_total %>%
+  select(bentho_green_percent) 
+
+# use ifelse to create a categorical variable that has two conditions
+median_BT <- median(curious$bentho_green_percent)
+#0.0625 = median
+curious <- mutate(curious, bentho_green_percent_low = ifelse(curious <= median_BT, 'low', 'high'))
+
+# we should get equal group sizes of "low" and "high"
+summary(as.factor(curious$bentho_green_percent_low))
+# high  low 
+#   43   44 
+
+####Now what if I have an arbitrary cut off?
+curious2 <- data_chlb_total %>%
+  select(bentho_green_percent) %>%
+  filter(bentho_green_percent > 0.15)
+ #32 total out 87 samples or approximately 36% of our samples
+
+
+#### What if we use the EPA 5:1 ratio of chlorophyll a:b cut off as being 16% inaccurate? (See EPA 445.0)
+chla <- data_chla_total %>%
+  select(mass_ug_cm2, run_ID) %>%
+  rename(chla = mass_ug_cm2) %>%
+  arrange(desc(chla))
+chlb <- data_chlb_total %>%
+  select(mass_ug_cm2, run_ID) %>%
+  rename(chlb = mass_ug_cm2) %>%
+  arrange(desc(chlb))
+
+#How many a:b > 5?
+chl_a_b <- left_join(chla,chlb,by="run_ID") %>%
+  mutate(ab = chla/chlb) %>%
+  filter(ab >= 5) %>%
+  summarize(n())
+
+### How many false negatives on the Benthotorch's part?
+falsenegative <- data_chlb_total %>%
+  filter(sqrt_BT_green == "0" & sqrt_UPLC_chlb > "0") %>%
+  arrange(mass_ug_cm2) %>%
+  summarize(min=min(sqrt_UPLC_chlb),
+            max=max(sqrt_UPLC_chlb),
+            n=n())
+#38 out of 87 samples were false positives 
+min = 0.008944272 ^ 2
+max = 0.2028423 ^ 2
+min
+max
+```
+
+#(exploratory) Questions about cyanobacteria for Discussion Section
+```{r cyano discussion}
+
+####How many of our sites are "high" greens? Higher than the median
+cyano_curious <- data_myxo_full %>%
+  filter(sqrt_UPLC_myxo < 0.01) 
+#Whitney & Tristan's samples had the most false positives by the Benthotorch
+
+chla_subset <- data_chla_total %>%
+  select(run_ID, bentho_totalchla, mass_ug_cm2)
+
+cyano_curious <- left_join(cyano_curious, chla_subset, by="run_ID")
+a <- ggplot(cyano_curious, aes(y=bentho_totalchla,x=mass_ug_cm2)) +
+  geom_point(size=3) 
+a
+b <- ggplot(cyano_curious, aes(y=sqrt_BT_cyano, x=sqrt(bentho_totalchla))) + geom_point()
+b
+c <- ggplot(cyano_curious, aes(y=sqrt_BT_cyano_perc, x=sqrt(bentho_totalchla))) + geom_point()
+c
+
+library(reshape2)
+cyano_falsepos <- cyano_curious$run_ID 
+green_falseneg <- falsenegative$run_ID
+falsepositives <- melt(data.frame(cyano_falsepos,green_falseneg))
+falsepositives <- dcast(falsepositives, variable ~ value) 
+#18 samples show overlap 
+commonsamples <- falsepositives[ , colSums(is.na(falsepositives)) == 0]
+
+commmonsamples_meta <- benthotorch_validation_short %>%
+  filter(run_ID %in% c("1","7","27","28","29","31","36","38","47","52","57","69","72","82","84","86","87","88" )) %>%
+  filter(pigment_ID %in% c("chla_total")) %>%
+  select(-pigment_ID, -area)
+
+CS_long <- commmonsamples_meta %>%
+  select(run_ID, pigment_ID, mass_ug_cm2) %>%
+  filter(pigment_ID %in% c("chla_total","chlb_total","myxo","fuco"))
+CS_wide <- dcast(CS_long, run_ID ~ pigment_ID, value.var="mass_ug_cm2")
+
+commonsamples_meta_2<- left_join(commmonsamples_meta,CS_wide, by="run_ID")
+
+```
+
+#(exploratory) Alternative plotting
+
+```{r function for linear model plotting, echo=FALSE}
+library(ggplot2)
+library(ggthemes)
+library(ggpmisc)
+
+#Customize theme 
+#http://joeystanley.com/blog/custom-themes-in-ggplot2 
+theme_BT <- function () { 
+    theme_base(base_size=15, base_family="Helvetica") %+replace% 
+        theme(
+            panel.background  = element_blank(),
+            plot.background = element_rect(fill="white", colour=NA), 
+            legend.background = element_rect(fill="transparent", colour=NA),
+            legend.key = element_rect(fill="transparent", colour=NA)
+            
+        )
+}
+theme_set(theme_BT())  # pre-set the bw theme
+
+#Function for plots
+ggplotRegression <- function(fit){
+
+require(ggplot2)
+
+ggplot(fit$model, aes_string(x = names(fit$model)[2], y = names(fit$model)[1])) + 
+  geom_point(size=1) +
+  stat_smooth(method = "lm", col = "black", se=FALSE) +
+  theme_BT()+
+  annotate("text", -Inf, Inf, hjust="inward", vjust=1.2,  label = paste("R2 = ",signif(summary(fit)$r.squared, 5),
+                     # "Intercept =",signif(fit$coef[[1]],5 ),
+                     # " Slope =",signif(fit$coef[[2]], 5),
+                     " p =",signif(summary(fit)$coef[2,4], 5)))
+}
+
+green1<- ggplotRegression(lm(sqrt_BT_green_perc ~ sqrt_UPLC_chlb_perc, data = data_chlb_total)) +
+  ggtitle("Green Algae")+
+    coord_cartesian(ylim=c(0,1),
+                    xlim=c(0,1))+
+  scale_y_continuous(breaks=seq(0, 1.0, 0.2), name = "square root green (BT) % ") +
+  scale_x_continuous(breaks=seq(0, 1.0, 0.2), name = "square root Chl-b (UPLC) % ")
+green1
+green2<- ggplotRegression(lm(sqrt_BT_green ~ sqrt_UPLC_chlb, data = data_chlb_total)) +
+  ggtitle("Green Algae")+
+  scale_y_continuous(breaks=seq(0, 1.0, 0.2), name = "square root green (BT) [ug/cm2] ") +
+  scale_x_continuous(breaks=seq(0, 1.0, 0.2), name = "square root Chl-b (UPLC) [ug/cm2] ")
+green2
+
+```

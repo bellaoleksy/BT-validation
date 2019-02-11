@@ -1,0 +1,734 @@
+---
+title: "Benthotorch validation with Type II regression model & pettitt tests"
+author: "Bella Oleksy"
+date: "07/02/2018"
+output: html_document
+fig_width: 6
+fig_height: 2.5
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+knitr::opts_chunk$set(fig.width=6, fig.height=6) 
+```
+
+# Data loading
+Loaded data and condensed mondo file into something managable for this analysis. 
+
+```{r loading data, warning=FALSE, message=FALSE, tidy=TRUE }
+
+benthotorch_validation_raw <- read.csv("data/MassCalcs_20180604.csv")
+
+library(dplyr) # for tidy data!
+library(skimr) # for skim() function
+library(knitr) # to print table in R markdown
+library(ggplot2) # for plots
+library(kableExtra) # for making tables pretty/legible
+library(lmodel2) # for type II regression model
+library(scales) # to add percentages to plots and pretty_breaks()
+glimpse(benthotorch_validation_raw)
+
+benthotorch_validation_short <- benthotorch_validation_raw %>%
+  select(run_ID,pigment_ID, area, bentho_green,bentho_green_percent,
+         bentho_diatom,bentho_diatom_percent,bentho_cyano,bentho_cyano_percent,
+         bentho_totalchla, mass_ug_cm2, perc_green_UPLC,
+         perc_diat_UPLC, perc_cyano_candidate, investigator) # select only the variables of interest
+
+skim_object1 <- skim(benthotorch_validation_short) %>%
+  filter(stat=="hist") #create skim table
+```
+
+# Summary of data
+
+
+```{r subset, results="hide" }
+#Fuco data subset
+data_fuco <- benthotorch_validation_short %>%
+  filter(pigment_ID=="fuco") %>%
+  filter(mass_ug_cm2 < 1) %>% # extreme removing outliers
+  mutate(log_UPLC_diat = log10(mass_ug_cm2 + 1 -min(mass_ug_cm2)),
+         # translate and then transform because of negative values
+         log_UPLC_diat_perc = log10(perc_diat_UPLC + 1 -min(perc_diat_UPLC)),
+         log_BT_diat = log10(bentho_diatom + 1 -min(bentho_diatom)),
+         log_BT_diat_perc = log10(bentho_diatom_percent + 1 -min(bentho_diatom_percent))) %>%
+  select(run_ID, pigment_ID,log_UPLC_diat, log_UPLC_diat_perc,  log_BT_diat, log_BT_diat_perc, investigator)
+
+#Chl a total data subset
+data_chla_total <- benthotorch_validation_short %>%
+  filter(pigment_ID=="chla_total") %>%
+  mutate(log_UPLC_chla = log10(mass_ug_cm2 + 1-min(mass_ug_cm2)),
+         log_BT_chla = log10(bentho_totalchla + 1-min(bentho_totalchla)))
+
+#Green subset
+data_chlb_total <- benthotorch_validation_short %>%
+  filter(pigment_ID=="chlb_total") %>%
+  filter(mass_ug_cm2 < 0.15) %>% #removing extreme outliers
+  mutate(sqrt_BT_green = sqrt(bentho_green),
+         sqrt_UPLC_chlb = sqrt(mass_ug_cm2),
+         sqrt_BT_green_perc = sqrt(bentho_green_percent),
+         sqrt_UPLC_chlb_perc = sqrt(perc_green_UPLC)) %>%
+  select(run_ID, pigment_ID, mass_ug_cm2, sqrt_BT_green, sqrt_UPLC_chlb, sqrt_BT_green_perc,  sqrt_UPLC_chlb_perc, bentho_green_percent,investigator)
+
+
+#Cyano subset all
+data_myxo_full <- benthotorch_validation_short %>%
+  filter(pigment_ID=="myxo") %>%
+  filter(mass_ug_cm2 < 0.15) %>% # removing extreme high outliers
+  mutate(sqrt_BT_cyano = sqrt(bentho_cyano),
+         sqrt_BT_cyano_perc = sqrt(bentho_cyano_percent),
+         sqrt_UPLC_myxo = sqrt(mass_ug_cm2),
+         sqrt_UPLC_myxo_perc = sqrt(perc_cyano_candidate)) %>%
+  select(run_ID, pigment_ID, sqrt_BT_cyano, sqrt_BT_cyano_perc, sqrt_UPLC_myxo, sqrt_UPLC_myxo_perc, investigator)
+
+
+#Cyano subset - nonzero BT values
+data_myxo_nonzeros <- benthotorch_validation_short %>%
+  filter(pigment_ID=="myxo") %>%
+  filter(mass_ug_cm2 < 0.15) %>% # removing extreme outliers
+  filter(mass_ug_cm2 > 0) %>%
+  mutate(sqrt_BT_cyano = sqrt(bentho_cyano),
+         sqrt_BT_cyano_perc = sqrt(bentho_cyano_percent),
+         sqrt_UPLC_myxo = sqrt(mass_ug_cm2),
+         sqrt_UPLC_myxo_perc = sqrt(perc_cyano_candidate)) %>%
+  select(run_ID, pigment_ID, sqrt_BT_cyano, sqrt_BT_cyano_perc, sqrt_UPLC_myxo, sqrt_UPLC_myxo_perc)
+```
+
+
+# Plot figures for MS 
+
+####Greens (perc of total and mass to mass)
+```{r green plots, include=FALSE, tidy=TRUE, fig.dim = c(6, 6)}
+library(ggplot2)
+library(ggthemes)
+library(ggpmisc)
+
+#Customize theme 
+#http://joeystanley.com/blog/custom-themes-in-ggplot2 
+theme_BT <- function () { 
+    theme_base(base_size=15, base_family="Helvetica") %+replace% 
+        theme(
+            panel.background  = element_blank(),
+            plot.background = element_rect(fill="white", colour=NA), 
+            legend.background = element_rect(fill="transparent", colour=NA),
+            legend.key = element_rect(fill="transparent", colour=NA)
+            
+        )
+}
+theme_set(theme_BT())  # pre-set the bw theme
+
+#Source for annotating plot with equation:
+# https://stackoverflow.com/questions/7549694/adding-regression-line-equation-and-r2-on-graph
+
+
+glimpse(data_chlb_total)
+green_lm1_eqn <- data_chlb_total$sqrt_BT_green_perc ~ data_chlb_total$sqrt_UPLC_chlb_perc 
+green_lm2_eqn <- data_chlb_total$sqrt_BT_green ~ data_chlb_total$sqrt_UPLC_chlb
+green_low_eqn <- Chlb_total_low$sqrt_BT_green_perc ~ Chlb_total_low$sqrt_UPLC_chlb_perc 
+green_high_eqn <- Chlb_total_high$sqrt_BT_green_perc ~ Chlb_total_high$sqrt_UPLC_chlb_perc 
+green_nonzero_eqn_1 <- data_chlb_total_nonzeros$sqrt_BT_green_perc ~ data_chlb_total_nonzeros$sqrt_UPLC_chlb_perc
+green_nonzero_eqn_2 <- data_chlb_total_nonzeros$sqrt_BT_green ~ data_chlb_total_nonzeros$sqrt_UPLC_chlb
+
+
+green1 <- ggplot(data_chlb_total, aes(y=sqrt_BT_green_perc,x=sqrt_UPLC_chlb_perc)) +
+  geom_point(size=3, alpha = 0.3,  position = position_jitter())+
+   stat_poly_eq(formula = green_lm1_eqn, 
+                label.x.npc="right", label.y.npc="top", aes(label = paste(..eq.label.., ..rr.label.., sep = "*plain(\",\")~")), 
+                parse = TRUE) +
+     ggtitle("Green algae")+
+    expand_limits(y=c(0,1.0),x=c(0,0.8))+
+  scale_y_continuous(breaks=pretty_breaks(n=5), labels= scales::percent, name = expression("sqrt"~green["BT"]~"")) +
+  scale_x_continuous(breaks=pretty_breaks(n=5), labels= scales::percent, name = expression("sqrt"~chlb["UPLC"]~""))
+
+
+
+green2 <- ggplot(data_chlb_total, aes(y=sqrt_BT_green,x=sqrt_UPLC_chlb)) +
+  geom_point(size=3, alpha = 0.3,  position = position_jitter())+
+   geom_smooth(method = "lm", se=FALSE, color="black") +
+   stat_poly_eq(formula = green_lm2_eqn, 
+                label.x.npc="right", label.y.npc="top", aes(label = paste(..eq.label.., ..rr.label.., sep = "*plain(\",\")~")), 
+                parse = TRUE) +
+      ggtitle("Green algae")+
+    expand_limits(y=1.0,x=0.4)+
+  scale_y_continuous(breaks=pretty_breaks(n=5), name = expression("sqrt"~green["BT"]~(mu*g/cm^2))) +
+  scale_x_continuous(breaks=pretty_breaks(n=5), name = expression("sqrt"~chlb["UPLC"]~(mu*g/cm^2)))
+green2
+
+#Changepoint figure for % green vs % chlb
+Chlb_total_low=subset(data_chlb_total, sqrt_UPLC_chlb_perc<0.115)
+Chlb_total_high=subset(data_chlb_total, sqrt_UPLC_chlb_perc>0.115)
+
+ChlbMod=lm(sqrt_BT_green_perc~sqrt_UPLC_chlb_perc, data=data_chlb_total)
+ChlbMod_low=lm(sqrt_BT_green_perc~sqrt_UPLC_chlb_perc, data=Chlb_total_low)
+summary(ChlbMod_low)
+#Intercept =  -0.00825, slope = 0.06835
+ChlbMod_high=lm(sqrt_BT_green_perc~sqrt_UPLC_chlb_perc, data=Chlb_total_high)
+summary(ChlbMod_high)
+#Interecept = 0.5597, slope = -0.3722
+
+
+breaks = function(x) unique(floor(pretty(seq(0, (max(x) + 1) * 1.1))))
+
+
+green_low <- ggplot(Chlb_total_low, aes(y=sqrt_BT_green_perc,x=sqrt_UPLC_chlb_perc)) +
+   geom_point(size=3, alpha = 0.3,  position = position_jitter())+
+   geom_smooth(method = "lm", se=FALSE, color="black") +
+   stat_poly_eq(formula = green_low_eqn, 
+                label.x.npc="right", label.y.npc="top", aes(label = paste(..eq.label.., ..rr.label.., sep = "*plain(\",\")~")), 
+                parse = TRUE) +
+     ggtitle("Green algae (below breakpoint)")+
+  expand_limits(y=c(0,1.0),x=c(0,0.12))+
+  scale_y_continuous(breaks=pretty_breaks(), labels= scales::percent, name = expression("SR"~green["BT"]~"")) +
+  scale_x_continuous(breaks=c(0,0.02,.04,.06,.08,0.10,.12), labels=c("0%","2%", "4%", "6%","8%","10%", "12%"),  name = expression("SR"~chlb["UPLC"]~""))
+
+
+
+green_high <- ggplot(Chlb_total_high, aes(y=sqrt_BT_green_perc,x=sqrt_UPLC_chlb_perc)) +
+  geom_point(size=3, alpha = 0.3,  position = position_jitter())+
+   geom_smooth(method = "lm", se=FALSE, color="black") +
+   stat_poly_eq(formula = green_high_eqn, 
+                label.x.npc="right", label.y.npc="top", aes(label = paste(..eq.label.., ..rr.label.., sep = "*plain(\",\")~")), 
+                parse = TRUE) +
+     ggtitle("Green algae (above breakpoint)")+
+  expand_limits(y=c(0,1.0),x=c(0,0.8))+
+  scale_y_continuous(breaks=seq(0, 1.0, 0.2), labels= scales::percent, name = expression("SR"~green["BT"]~"")) +
+  scale_x_continuous(breaks=c(0,0.2,0.4,0.6,0.8), labels=c("0%","20%", "40%", "60%","80%"), name = expression("SR"~chlb["UPLC"]~""))
+
+
+
+#What if we exclude the zero values for Chlb(UPLC), where we detected 
+#green algae but the BT didn't.
+data_chlb_total_nonzeros <- data_chlb_total %>%
+  filter(sqrt_BT_green > 0)
+nonzero_chlb_lm <- lm(sqrt_BT_green~sqrt_UPLC_chlb, data=data_chlb_total_nonzeros)
+summary(nonzero_chlb_lm)
+nonzero_chlb_perc_lm <- lm(sqrt_BT_green_perc~sqrt_UPLC_chlb_perc, data=data_chlb_total_nonzeros)
+summary(nonzero_chlb_perc_lm)
+
+green_nonzero2 <- ggplot(data_chlb_total_nonzeros, aes(y=sqrt_BT_green,x=sqrt_UPLC_chlb)) +
+  geom_point(size=1) +
+   geom_smooth(method = "lm", se=FALSE, color="black") +
+   stat_poly_eq(formula = green_nonzero_eqn_2, 
+                label.x.npc="right", label.y.npc="top", aes(label = paste(..eq.label.., ..rr.label.., sep = "*plain(\",\")~")), 
+                parse = TRUE) +
+     ggtitle("Green algae (non-zeros)")+
+  scale_y_continuous(name = expression("SR"~green["BT"]~(mu*g/cm^2))) +
+  scale_x_continuous(name = expression("SR"~chlb["UPLC"]~(mu*g/cm^2)))
+
+
+green_nonzero1 <- ggplot(data_chlb_total_nonzeros, aes(y=sqrt_BT_green_perc,x=sqrt_UPLC_chlb_perc)) +
+  geom_point(size=1) +
+   geom_smooth(method = "lm", se=FALSE, color="black") +
+   stat_poly_eq(formula = green_nonzero_eqn_1, 
+                label.x.npc="right", label.y.npc="top", aes(label = paste(..eq.label.., ..rr.label.., sep = "*plain(\",\")~")), 
+                parse = TRUE) +
+     ggtitle("Green algae (non-zeros)")+
+  scale_y_continuous(labels= scales::percent, name = expression("SR"~green["BT"]~"")) +
+  scale_x_continuous(name = expression("SR"~chlb["UPLC"]~""))
+
+
+```
+
+```{r, echo=FALSE}
+green1
+green2
+green_low
+green_high
+green_nonzero1
+green_nonzero2
+```
+
+####Cyano (perc of total and mass to mass)
+
+```{r cyano plots, include=FALSE, tidy=TRUE, fig.dim = c(6, 6)}
+
+
+glimpse(data_myxo_full)
+cyano_lm1_eqn <-  data_myxo_full$sqrt_BT_cyano_perc~data_myxo_full$sqrt_UPLC_myxo_perc 
+cyano_lm2_eqn <-   data_myxo_full$sqrt_BT_cyano~data_myxo_full$sqrt_UPLC_myxo
+
+
+cyano1 <- ggplot(data_myxo_full, aes(y=sqrt_BT_cyano_perc,x=sqrt_UPLC_myxo_perc)) +
+  geom_point(size=3, alpha = 0.3,  position = position_jitter())+
+   # geom_smooth(method = "lm", se=FALSE, color="black") +
+   stat_poly_eq(formula = cyano_lm1_eqn, 
+                label.x.npc="right", label.y.npc="top", aes(label = paste(..eq.label.., ..rr.label.., sep = "*plain(\",\")~")), 
+                parse = TRUE) +
+  ggtitle("Cyanobacteria")+
+  expand_limits(y=1.0,x=0.4)+
+  scale_y_continuous(labels= scales::percent, breaks=seq(0,1.0,0.25), name = expression("sqrt"~cyano["BT"]~"")) +
+  scale_x_continuous(breaks=c(0,0.1,0.2,0.3,0.4), labels=c("0%","10%", "20%", "30%","40%"), name = expression("sqrt"~myxo["UPLC"]~""))
+
+
+cyano2 <- ggplot(data_myxo_full, aes(y=sqrt_BT_cyano,x=sqrt_UPLC_myxo)) +
+  geom_point(size=3, alpha = 0.3,  position = position_jitter())+
+   geom_smooth(method = "lm", se=FALSE, color="black") +
+   stat_poly_eq(formula = cyano_lm2_eqn, 
+                label.x.npc="right", label.y.npc="top", aes(label = paste(..eq.label.., ..rr.label.., sep = "*plain(\",\")~")), 
+                parse = TRUE) +
+  ggtitle("Cyanobacteria")+
+  expand_limits(y=0.6,x=0.3)+
+  scale_y_continuous(name = expression("sqrt"~cyano["BT"]~(mu*g/cm^2))) +
+  scale_x_continuous(name = expression("sqrt"~myxo["UPLC"]~(mu*g/cm^2)))
+
+
+glimpse(data_myxo_nonzeros)
+cyano_lm3_eqn <-  data_myxo_nonzeros$sqrt_BT_cyano_perc~data_myxo_nonzeros$sqrt_UPLC_myxo_perc
+cyano_lm4_eqn <-   data_myxo_nonzeros$sqrt_BT_cyano~data_myxo_nonzeros$sqrt_UPLC_myxo
+
+# summary(model1)
+cyano3 <- ggplot(data_myxo_nonzeros, aes(y=sqrt_BT_cyano_perc,x=sqrt_UPLC_myxo_perc)) +
+  geom_point(size=3, alpha = 0.3,  position = position_jitter())+
+   stat_poly_eq(formula = cyano_lm3_eqn,
+                label.x.npc="right", label.y.npc="top", aes(label = paste(..eq.label.., ..rr.label.., sep = "*plain(\",\")~")),
+                parse = TRUE) +
+  ggtitle("Cyanobacteria (without zeros)")+
+      expand_limits(y=c(0,1.0),x=c(0,0.4))+
+
+  scale_y_continuous(labels= scales::percent, breaks=seq(0,1.0,0.25), name = expression("sqrt"~cyano["BT"]~"")) +
+  scale_x_continuous(breaks=c(0,0.1,0.2,0.3,0.4), labels=c("0%","10%", "20%", "30%","40%"), name = expression("sqrt"~myxo["UPLC"]~""))
+
+
+cyano4 <- ggplot(data_myxo_nonzeros, aes(y=sqrt_BT_cyano,x=sqrt_UPLC_myxo)) +
+  geom_point(size=3, alpha = 0.3,  position = position_jitter())+
+   geom_smooth(method = "lm", se=FALSE, color="black") +
+   stat_poly_eq(formula = cyano_lm4_eqn,
+                label.x.npc="right", label.y.npc="top", aes(label = paste(..eq.label.., ..rr.label.., sep = "*plain(\",\")~")),
+                parse = TRUE) +
+  ggtitle("Cyanobacteria (without zeros)")+
+    expand_limits(y=c(0,0.6),x=c(0,0.3))+
+  scale_y_continuous(name = expression("sqrt"~cyano["BT"]~(mu*g/cm^2))) +
+  scale_x_continuous(name = expression("sqrt"~myxo["UPLC"]~(mu*g/cm^2)))
+
+```
+
+```{r, echo=FALSE}
+cyano1
+cyano2
+cyano3
+cyano4
+```
+
+####Diatoms (perc of total and mass to mass)
+
+```{r diatom plots, include=FALSE}
+glimpse(data_fuco)
+diat_lm1_eqn <- data_fuco$log_BT_diat_perc ~data_fuco$log_UPLC_diat_perc
+diat_lm2_eqn <- data_fuco$log_BT_diat~data_fuco$log_UPLC_diat
+
+
+diatoms1 <- ggplot(data_fuco, aes(y=log_BT_diat_perc,x=log_UPLC_diat_perc)) +
+  geom_point(size=3, alpha = 0.3,  position = position_jitter())+
+   geom_smooth(method = "lm", se=FALSE, color="black") +
+   stat_poly_eq(formula = diat_lm1_eqn, 
+                label.x.npc="right", label.y.npc="top", aes(label = paste(..eq.label.., ..rr.label.., sep = "*plain(\",\")~")), 
+                parse = TRUE) +
+  ggtitle("Diatoms")+
+  expand_limits(y=0.3,x=0.3)+
+  scale_y_continuous(breaks=c(0,0.1,0.2,0.3), labels=c("0%","10%", "20%", "30%"), name = expression(log~diatoms["BT"]~"")) +
+  scale_x_continuous(breaks=c(0,0.1,0.2,0.3), labels=c("0%","10%", "20%", "30%"), name = expression(log~fuco["UPLC"]~""))
+
+
+diatoms2 <- ggplot(data_fuco, aes(y=log_BT_diat,x=log_UPLC_diat)) +
+  geom_point(size=3, alpha = 0.3,  position = position_jitter())+
+
+   stat_poly_eq(formula = diat_lm2_eqn, 
+                label.x.npc="right", label.y.npc="top", aes(label = paste(..eq.label.., ..rr.label.., sep = "*plain(\",\")~")), 
+                parse = TRUE) +
+  ggtitle("Diatoms")+
+    expand_limits(y=0.80,x=0.20)+
+  scale_y_continuous(breaks=seq(0, 0.80, 0.20),name = expression(log~diatoms["BT"]~(mu*g/cm^2))) +
+  scale_x_continuous(breaks=seq(0, 0.2, 0.05), name = expression(log~fuco["UPLC"]~(mu*g/cm^2)))
+
+```
+```{r, echo=FALSE}
+diatoms1
+diatoms2
+```
+
+####Total chla (mass to mass)
+
+```{r total chla plots, include=FALSE}
+glimpse(data_chla_total)
+chla_lm1_eqn <- data_chla_total$log_BT_chla ~data_chla_total$log_UPLC_chla
+
+
+chla1 <- ggplot(data_chla_total, aes(y=log_BT_chla,x=log_UPLC_chla)) +
+  geom_point(size=3, alpha = 0.3,  position = position_jitter())+
+   geom_smooth(method = "lm", se=FALSE, color="black") +
+   stat_poly_eq(formula = chla_lm1_eqn, 
+                label.x.npc="right", label.y.npc="top", aes(label = paste(..eq.label.., ..rr.label.., sep = "*plain(\",\")~")), 
+                parse = TRUE) +
+  ggtitle(expression(paste(bold("Total chlorophyll "), bolditalic("a"))))+
+  expand_limits(x=0.8, y=0.8)+
+  scale_y_continuous(name = expression(log~chl~italic("a")["BT"]~(mu*g/cm^2))) +
+  scale_x_continuous(name = expression(log~chl~italic("a")["UPLC"]~(mu*g/cm^2)))
+
+```
+```{r, echo=FALSE}
+chla1
+```
+
+
+```{r all figures, echo=FALSE, include=FALSE}
+library(grid) 
+library(ggpubr)
+library(gridExtra)
+
+
+###UPDATED STACKED FIGURE FOR MANUSCRIPT (Figure 2)
+chla_panel <- ggarrange(NULL,chla1,NULL,
+                        ncol=3,nrow=1,
+                        widths=c(0.2,0.6,0.2),
+                        labels=c("","A",""))
+all_stacked <- ggarrange(chla_panel,
+               ggarrange(
+                        green1 , green2 ,
+                        diatoms1 , diatoms2 ,
+                        cyano1 , cyano2 ,
+                        cyano3 , cyano4,
+          align="hv",
+          ncol = 2, nrow = 4,
+          labels = c("B", "C", "D", "E", "F", "G", "H","I")),
+          nrow=2,
+          widths = c(4,4), heights = c(0.3,1.0))
+# ggsave("figures/figure2-A_allpigments.tiff", width=12, height=16,units="in")
+
+
+chla_panel <- ggarrange(NULL,chla1,NULL,
+                        ncol=3,nrow=1,
+                        widths=c(0.2,0.6,0.2),
+                        labels=c("","A",""))
+all_stacked <- ggarrange(chla_panel,
+               ggarrange(
+                        green1 , green2 ,
+                        diatoms1 , diatoms2 ,
+                        cyano1 , cyano2 ,
+                        cyano3 , cyano4,
+          align="hv",
+          ncol = 2, nrow = 4,
+          labels = c("B", "C", "D", "E", "F", "G", "H","I")),
+          nrow=2,
+          widths = c(4,4), heights = c(0.3,1.0))
+# ggsave("figures/figure2-B_allpigments.tiff", width=8, height=16,units="in")
+
+
+#Breakpoint figure
+breakpoint <- 
+               ggarrange(green_low , green_high ,
+          align="v",
+          ncol = 2, nrow = 1,
+          labels = c("A", "B"),
+          widths = c(4,4), heights = c(0.3,0.3))
+# ggsave("figures/figure3_green_breakpoints.tiff", width=12, height=8,units="in")
+
+#Non-zero green figures
+green_nonzeros <-
+               ggarrange(green_nonzero1 , green_nonzero2 ,
+          align="v",
+          ncol = 2, nrow = 1,
+          labels = c("A", "B"),
+          widths = c(4,4), heights = c(0.3,0.3))
+# ggsave("figures/figX_green_nonzeros.png", width=12, height=8,units="in")
+
+#Non-zero green figures with regular green
+green_allfigs <-
+               ggarrange(green1, green2,
+                         green_nonzero1 , green_nonzero2 ,
+          align="v",
+          ncol = 2, nrow = 2,
+          labels = c("A", "B", "C","D"),
+          widths = c(4,4), heights = c(0.3,0.3))
+# ggsave("figures/figX_green_allfigs.png", width=12, height=12,units="in")
+
+
+
+```
+
+
+# ANCOVA & mixed effects models
+Output from an exploratory analysis. Starting with greens, followed by diatoms, cyanobacteria, and total chlorophylls. 
+
+##Greens
+#####ANCOVA greens + investigator (proxy for site)
+```{r ANCOVA greens, echo=FALSE}
+greens1_covariates <- ggplot(data_chlb_total,
+  aes(y=sqrt_BT_green_perc,x=sqrt_UPLC_chlb_perc,color=investigator, fill=investigator)) +
+  geom_point(size=3) +
+  geom_smooth(method = "lm", se=FALSE) +
+  ggtitle("Greens")+
+  expand_limits(y=1.0,x=1.0)+
+  scale_y_continuous(breaks=seq(0,1.0,0.1), name = expression(sqrt~greens["BT"]~"%")) +
+  scale_x_continuous(name = expression(sqrt~chlb["UPLC"]~"%"))
+greens1_covariates
+```
+
+```{r,tidy=TRUE, collapse=TRUE}
+library(car)
+ANCOVA_greens1_add <- lm(sqrt_BT_green_perc ~ sqrt_UPLC_chlb_perc + investigator, data=data_chlb_total)
+Anova(ANCOVA_greens1_add)
+
+options(contrasts=c("contr.sum","contr.poly"))
+ANCOVA_greens1_intxn <- aov(sqrt_BT_green_perc ~ sqrt_UPLC_chlb_perc * investigator, data=data_chlb_total)
+Anova(ANCOVA_greens1_intxn, type="III")
+### The category variable (investigator) is significant,
+### so the intercepts among groups are different
+
+# Compare the two models.
+anova(ANCOVA_greens1_add,ANCOVA_greens1_intxn)
+```
+
+```{r, echo=FALSE}
+greens2_covariates <- ggplot(data_chlb_total,
+ aes(y=sqrt_BT_green,x=sqrt_UPLC_chlb, color=investigator, fill=investigator)) +
+ geom_point(size=3) +
+ geom_smooth(method = "lm", se=FALSE) +
+ ggtitle("Greens")+
+ expand_limits(y=0.8,x=0.2)+
+ scale_y_continuous(name = expression(sqrt~greens["BT"]~(mu*g/cm^2))) +
+ scale_x_continuous(name = expression(sqrt~chlb["UPLC"]~(mu*g/cm^2)))
+greens2_covariates
+```
+
+```{r, tidy=TRUE, collapse=TRUE}
+ANCOVA_greens2_add <- lm(sqrt_BT_green ~ sqrt_UPLC_chlb + investigator, data=data_chlb_total)
+
+library(car)
+options(contrasts=c("contr.sum","contr.poly"))
+ANCOVA_greens2_intxn <- aov(sqrt_BT_green ~ sqrt_UPLC_chlb * investigator, data=data_chlb_total)
+Anova(ANCOVA_greens2_intxn, type="III")
+anova(ANCOVA_greens2_add,ANCOVA_greens2_intxn)
+### The category variable (investigator) is significant,
+### so the intercepts among groups are different
+```
+
+#####Mixed effect model greens + investigator (proxy for site)
+Relative abundances
+```{r mixed effect model greens, tidy=TRUE, collapse=TRUE}
+library(lme4)
+library(lmerTest)##Provides a p-value for the model but package needs to be unattached if you're using lsmeans to look at differences among a factor. For some reason lsmeans won't work with this package. 
+library(MuMIn)
+
+Fit1_chlb=lmer(sqrt_BT_green_perc~sqrt_UPLC_chlb_perc +(1+sqrt_UPLC_chlb_perc|investigator), data=data_chlb_total)
+##Specifying different intercepts for investigators via the "1+" and different slopes for investigators by putting x in front of Investigator. 
+plot(Fit1_chlb)
+qqPlot(residuals(Fit1_chlb))
+Fit1_chlb
+summary(Fit1_chlb)
+r.squaredGLMM(Fit1_chlb)
+##Note: this provides a marginal R2m and conditional R2c. Marginal R2 quantifies only the variance explained by the fixed factor, while conditional R2 quantifies variance explained by fixed and random factors. 
+```
+
+Pigment concentrations
+```{r}
+Fit2_chlb=lmer(sqrt_BT_green~sqrt_UPLC_chlb +(1+sqrt_UPLC_chlb|investigator), data=data_chlb_total) ##Specifying different intercepts for investigators via the "1+" and different slopes for investigators by putting x in front of Investigator. 
+plot(Fit2_chlb)
+qqPlot(residuals(Fit2_chlb))
+Fit2_chlb
+summary(Fit2_chlb)
+r.squaredGLMM(Fit2_chlb) ##Note: this provides a marginal R2m and conditional R2c. Marginal R2 quantifies only the variance explained by the fixed factor, while conditional R2 quantifies variance explained by fixed and random factors. 
+```
+
+##Diatoms
+#####ANCOVA diatoms + investigator (proxy for site)
+Relative abundances
+```{r, echo=FALSE}
+diatoms1_covariates <- ggplot(data_fuco, aes(y=log_BT_diat_perc,x=log_UPLC_diat_perc, color=investigator, fill=investigator)) +
+  geom_point(size=3) +
+   geom_smooth(method = "lm", se=FALSE) +
+  ggtitle("Diatoms")+
+  expand_limits(y=0.3,x=0.3)+
+  scale_y_continuous(breaks=seq(0,0.3,0.1), name = expression(log~diatoms["BT"]~"%")) +
+  scale_x_continuous(name = expression(log~fuco["UPLC"]~"%"))
+diatoms1_covariates
+```
+
+Relative abundances
+```{r ANCOVA diatoms, tidy=TRUE, collapse=TRUE}
+library(car)
+ANCOVA_diatoms1_add <- lm(log_BT_diat_perc ~ log_UPLC_diat_perc + investigator, data=data_fuco)
+Anova(ANCOVA_diatoms1_add)
+
+options(contrasts=c("contr.sum","contr.poly"))
+ANCOVA_diatoms1_intxn <- aov(log_BT_diat_perc ~ log_UPLC_diat_perc * investigator, data=data_fuco)
+Anova(ANCOVA_diatoms1_intxn, type="III")
+### The category variable (investigator) is significant,
+### so the intercepts among groups are different
+
+# Compare the two models.
+anova(ANCOVA_diatoms1_add,ANCOVA_diatoms1_intxn)
+```
+
+Pigment concentrations
+```{r, echo=FALSE}
+diatoms2_covariates <- ggplot(data_fuco, aes(y=log_BT_diat,x=log_UPLC_diat, color=investigator, fill=investigator)) +
+  geom_point(size=3) +
+     geom_smooth(method = "lm", se=FALSE) +
+  ggtitle("Diatoms")+
+    expand_limits(y=0.8,x=0.2)+
+  scale_y_continuous(name = expression(log~diatoms["BT"]~(mu*g/cm^2))) +
+  scale_x_continuous(name = expression(log~fuco["UPLC"]~(mu*g/cm^2)))
+diatoms2_covariates
+```
+
+Pigment concentrations
+```{r,tidy=TRUE, collapse=TRUE}
+ANCOVA_diatoms2_add <- lm(log_BT_diat ~ log_UPLC_diat + investigator, data=data_fuco)
+
+library(car)
+options(contrasts=c("contr.sum","contr.poly"))
+ANCOVA_diatoms2_intxn <- aov(log_BT_diat ~ log_UPLC_diat * investigator, data=data_fuco)
+Anova(ANCOVA_diatoms2_intxn, type="III")
+anova(ANCOVA_diatoms2_add,ANCOVA_diatoms2_intxn)
+### The category variable (investigator) is significant,
+### so the intercepts among groups are different
+```
+
+#####Mixed effect model diatoms + investigator (proxy for site)
+Pigment concentrations
+```{r,tidy=TRUE, collapse=TRUE}
+library(lme4)
+library(lmerTest) ##Provides a p-value for the model but package needs to be unattached if you're using lsmeans to look at differences among a factor. For some reason lsmeans won't work with this package. 
+library(MuMIn)
+
+Fit1_fuco=lmer(log_BT_diat~log_UPLC_diat +(1+log_UPLC_diat|investigator), data=data_fuco) ##Specifying different intercepts for investigators via the "1+" and different slopes for investigators by putting x in front of Investigator. 
+par(mfrow=c(1,1))
+plot(Fit1_fuco)
+qqPlot(residuals(Fit1_fuco))
+summary(Fit1_fuco)
+r.squaredGLMM(Fit1_fuco) ##Note: this provides a marginal R2m and conditional R2c. Marginal R2 quantifies only the variance explained by the fixed factor, while conditional R2 quantifies variance explained by fixed and random factors. 
+```
+
+Relative abundances
+```{r, tidy=TRUE, collapse=TRUE}
+Fit2_fuco=lmer(log_BT_diat_perc~log_UPLC_diat_perc +(1+log_UPLC_diat_perc|investigator), data=data_fuco) ##Specifying different intercepts for investigators via the "1+" and different slopes for investigators by putting x in front of Investigator. 
+par(mfrow=c(1,1))
+plot(Fit2_fuco)
+qqPlot(residuals(Fit2_fuco))
+summary(Fit2_fuco)
+r.squaredGLMM(Fit2_fuco) ##Note: this provides a marginal R2m and conditional R2c. Marginal R2 quantifies only the variance explained by the fixed factor, while conditional R2 quantifies variance explained by fixed and random factors. 
+```
+
+
+##Cyano
+#####ANCOVA cyano + investigator (proxy for site)
+Relative abundances
+```{r, echo=FALSE}
+cyano1_covariates <- ggplot(data_myxo_full, aes(y=sqrt_BT_cyano_perc,x=sqrt_UPLC_myxo_perc, color=investigator, fill=investigator)) +
+  geom_point(size=3) +
+   geom_smooth(method = "lm", se=FALSE) +
+  ggtitle("Cyano")+
+  expand_limits(y=1.0,x=1.0)+
+  scale_y_continuous(breaks=seq(0,1.0,0.1), name = expression(sqrt~cyano["BT"]~"%")) +
+  scale_x_continuous(name = expression(sqrt~myxo["UPLC"]~"%"))
+cyano1_covariates
+```
+
+Relative abundances
+```{r ANCOVA cyano,tidy=TRUE, collapse=TRUE}
+library(car)
+ANCOVA_cyano1_add <- lm(sqrt_BT_cyano_perc ~ sqrt_UPLC_myxo_perc + investigator, data=data_myxo_full)
+Anova(ANCOVA_cyano1_add)
+
+options(contrasts=c("contr.sum","contr.poly"))
+ANCOVA_cyano1_intxn <- aov(sqrt_BT_cyano_perc ~ sqrt_UPLC_myxo_perc * investigator, data=data_myxo_full)
+Anova(ANCOVA_cyano1_intxn, type="III")
+### The category variable (investigator) is significant,
+### so the intercepts among groups are different
+
+# Compare the two models.
+anova(ANCOVA_cyano1_add,ANCOVA_cyano1_intxn)
+```
+
+Pigment concentrations
+```{r, echo=FALSE}
+cyano2_covariates <- ggplot(data_myxo_full, aes(y=sqrt_BT_cyano,x=sqrt_UPLC_myxo, color=investigator, fill=investigator)) +
+  geom_point(size=3) +
+     geom_smooth(method = "lm", se=FALSE) +
+  ggtitle("Cyano")+
+    expand_limits(y=0.8,x=0.2)+
+  scale_y_continuous(name = expression(sqrt~cyano["BT"]~(mu*g/cm^2))) +
+  scale_x_continuous(name = expression(sqrt~myxo["UPLC"]~(mu*g/cm^2)))
+cyano2_covariates
+```
+
+Pigment concentrations
+```{r,tidy=TRUE, collapse=TRUE}
+ANCOVA_cyano2_add <- lm(sqrt_BT_cyano ~ sqrt_UPLC_myxo + investigator, data=data_myxo_full)
+
+library(car)
+options(contrasts=c("contr.sum","contr.poly"))
+ANCOVA_cyano2_intxn <- aov(sqrt_BT_cyano ~ sqrt_UPLC_myxo * investigator, data=data_myxo_full)
+Anova(ANCOVA_cyano2_intxn, type="III")
+anova(ANCOVA_cyano2_add,ANCOVA_cyano2_intxn)
+### The category variable (investigator) is significant,
+### so the intercepts among groups are different
+```
+
+#####Mixed effect model cyano + investigator (proxy for site)
+Relative abundances
+```{r mixed effect model cyano,tidy=TRUE, collapse=TRUE}
+library(lme4)
+library(lmerTest) ##Provides a p-value for the model but package needs to be unattached if you're using lsmeans to look at differences among a factor. For some reason lsmeans won't work with this package. 
+library(MuMIn)
+
+Fit1_myxo=lmer(sqrt_BT_cyano_perc~sqrt_UPLC_myxo_perc +(1+sqrt_UPLC_myxo_perc|investigator), data=data_myxo_full) ##Specifying different intercepts for investigators via the "1+" and different slopes for investigators by putting x in front of Investigator. 
+plot(Fit1_myxo)
+qqPlot(residuals(Fit1_myxo))
+summary(Fit1_myxo)
+r.squaredGLMM(Fit1_myxo) ##Note: this provides a marginal R2m and conditional R2c. Marginal R2 quantifies only the variance explained by the fixed factor, while conditional R2 quantifies variance explained by fixed and random factors. 
+```
+
+Pigment concentrations
+```{r, tidy=TRUE, collapse=TRUE}
+Fit2_myxo=lmer(sqrt_BT_cyano~sqrt_UPLC_myxo +(1+sqrt_UPLC_myxo|investigator), data=data_myxo_full) ##Specifying different intercepts for investigators via the "1+" and different slopes for investigators by putting x in front of Investigator. 
+plot(Fit2_myxo)
+qqPlot(residuals(Fit2_myxo))
+summary(Fit2_myxo)
+r.squaredGLMM(Fit2_myxo) ##Note: this provides a marginal R2m and conditional R2c. Marginal R2 quantifies only the variance explained by the fixed factor, while conditional R2 quantifies variance explained by fixed and random factors. 
+```
+
+
+
+##Total chl
+#####ANCOVA chla + investigator
+```{r ANCOVA chla, echo=FALSE}
+chla_investigator <- ggplot(data_chla_total, aes(y=log_BT_chla,x=log_UPLC_chla, color=investigator, fill=investigator)) +
+  geom_point(size=3) +
+   geom_smooth(method = "lm", se=FALSE) +
+  ggtitle(expression(paste("Total chlorophyll ", italic("a"))))+
+  expand_limits(x=1.0, y=1.0)+
+  scale_y_continuous(name = expression(log~Chl~italic("a")["BT"]~(mu*g/cm^2))) +
+  scale_x_continuous(name = expression(log~Chl~italic("a")["UPLC"]~(mu*g/cm^2)))
+chla_investigator
+```
+
+```{r,tidy=TRUE, collapse=TRUE}
+ANCOVA_chla1_add <- lm(log_BT_chla ~ log_UPLC_chla + investigator, data=data_chla_total)
+anova(ANCOVA_chla1_add)
+summary(ANCOVA_chla1_add)
+Anova(ANCOVA_chla1_add)
+
+library(car)
+options(contrasts=c("contr.sum","contr.poly"))
+ANCOVA_chla1_intxn <- aov(log_BT_chla ~ log_UPLC_chla * investigator, data=data_chla_total)
+Anova(ANCOVA_chla1_intxn, type="III")
+### The category variable (investigator) is significant,
+### so the intercepts among groups are different
+
+# Compare the two models.
+anova(ANCOVA_chla1_add,ANCOVA_chla1_intxn)
+```
+
+#####Mixed effect model chla + investigator 
+```{r mixed effect model diatoms,tidy=TRUE, collapse=TRUE}
+library(lme4)
+library(lmerTest) ##Provides a p-value for the model but package needs to be unattached if you're using lsmeans to look at differences among a factor. For some reason lsmeans won't work with this package. 
+library(MuMIn)
+
+Fit1_chla=lmer(log_BT_chla~log_UPLC_chla +(1+log_UPLC_chla|investigator), data=data_chla_total) ##Specifying different intercepts for investigators via the "1+" and different slopes for investigators by putting x in front of Investigator. 
+plot(Fit1_chla)
+qqPlot(residuals(Fit1_chla))
+
+summary(Fit1_chla)
+r.squaredGLMM(Fit1_chla) ##Note: this provides a marginal R2m and conditional R2c. Marginal R2 quantifies only the variance explained by the fixed factor, while conditional R2 quantifies variance explained by fixed and random factors. 
+```
