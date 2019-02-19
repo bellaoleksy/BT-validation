@@ -36,10 +36,13 @@ benthotorch_validation_short <- benthotorch_validation_raw %>%
 
 skim_object1 <- skim(benthotorch_validation_short) %>%
   filter(stat=="hist") #create skim table
+
+benthotorch_validation_short$investigator <- factor(benthotorch_validation_short$investigator, levels=c('Chris','Bella','Whit',
+                                               'Tristan'))
+
 ```
 
 # Summary of data
-
 
 ```{r subset, results="hide" }
 #Fuco data subset
@@ -115,6 +118,10 @@ theme_BT <- function () {
         )
 }
 theme_set(theme_BT())  # pre-set the bw theme
+
+investigator_colors <- c("#ff0000", "#0000ff", "#00ff00", "#ff00bf") #treatment colors
+
+
 
 #Source for annotating plot with equation:
 # https://stackoverflow.com/questions/7549694/adding-regression-line-equation-and-r2-on-graph
@@ -452,14 +459,22 @@ Output from an exploratory analysis. Starting with greens, followed by diatoms, 
 #####ANCOVA greens + investigator (proxy for site)
 ```{r ANCOVA greens, echo=FALSE}
 greens1_covariates <- ggplot(data_chlb_total,
-  aes(y=sqrt_BT_green_perc,x=sqrt_UPLC_chlb_perc,color=investigator, fill=investigator)) +
-  geom_point(size=3) +
-  geom_smooth(method = "lm", se=FALSE) +
-  ggtitle("Greens")+
-  expand_limits(y=1.0,x=1.0)+
-  scale_y_continuous(breaks=seq(0,1.0,0.1), name = expression(sqrt~greens["BT"]~"%")) +
-  scale_x_continuous(name = expression(sqrt~chlb["UPLC"]~"%"))
+  aes(y=sqrt_BT_green_perc,x=sqrt_UPLC_chlb_perc,color=investigator)) +
+  geom_point(size=3, alpha = 0.6,  position = position_jitter())+
+  geom_smooth(method = "lm", se=FALSE, show.legend=FALSE) +
+  ggtitle("Green algae")+
+  expand_limits(y=0.9,x=0.8)+
+  scale_y_continuous(breaks=pretty_breaks(n=5), labels= scales::percent, name = expression("sqrt"~green["BT"]~"%")) +
+  scale_x_continuous(breaks=pretty_breaks(n=5), labels= scales::percent, name = expression("sqrt"~chlb["UPLC"]~"%")) +
+  scale_color_manual(values=investigator_colors,
+                    name="Site",
+                    breaks=c("Chris","Bella","Whit","Tristan"),
+                    labels=c("SRL", "LV", "PR", "RMNP"))+
+  theme(legend.position="none")
 greens1_covariates
+
+
+
 ```
 
 ```{r,tidy=TRUE, collapse=TRUE}
@@ -479,14 +494,21 @@ anova(ANCOVA_greens1_add,ANCOVA_greens1_intxn)
 
 ```{r, echo=FALSE}
 greens2_covariates <- ggplot(data_chlb_total,
- aes(y=sqrt_BT_green,x=sqrt_UPLC_chlb, color=investigator, fill=investigator)) +
- geom_point(size=3) +
+ aes(y=sqrt_BT_green,x=sqrt_UPLC_chlb, color=investigator)) +
+ geom_point(size=3, alpha = 0.6,  position = position_jitter())+
  geom_smooth(method = "lm", se=FALSE) +
- ggtitle("Greens")+
+ ggtitle("Green algae")+
  expand_limits(y=0.8,x=0.2)+
- scale_y_continuous(name = expression(sqrt~greens["BT"]~(mu*g/cm^2))) +
- scale_x_continuous(name = expression(sqrt~chlb["UPLC"]~(mu*g/cm^2)))
-greens2_covariates
+ scale_y_continuous(breaks=pretty_breaks(n=5), name = expression(sqrt~greens["BT"]~(mu*g/cm^2))) +
+ scale_x_continuous(breaks=pretty_breaks(n=5), name = expression(sqrt~chlb["UPLC"]~(mu*g/cm^2))) +
+    scale_color_manual(values=investigator_colors,
+                    name="Site",
+                    breaks=c("Chris","Bella","Whit","Tristan"),
+                    labels=c("SRL", "LV", "PR", "RMNP"))+
+  theme(legend.position="none")
+  greens2_covariates
+
+
 ```
 
 ```{r, tidy=TRUE, collapse=TRUE}
@@ -532,14 +554,20 @@ r.squaredGLMM(Fit2_chlb) ##Note: this provides a marginal R2m and conditional R2
 #####ANCOVA diatoms + investigator (proxy for site)
 Relative abundances
 ```{r, echo=FALSE}
-diatoms1_covariates <- ggplot(data_fuco, aes(y=log_BT_diat_perc,x=log_UPLC_diat_perc, color=investigator, fill=investigator)) +
-  geom_point(size=3) +
-   geom_smooth(method = "lm", se=FALSE) +
+diatoms1_covariates <- ggplot(data_fuco, aes(y=log_BT_diat_perc,x=log_UPLC_diat_perc, color=investigator)) +
+  geom_point(size=3, alpha = 0.6,  position = position_jitter())+
+  geom_smooth(method = "lm", se=FALSE) +
   ggtitle("Diatoms")+
   expand_limits(y=0.3,x=0.3)+
-  scale_y_continuous(breaks=seq(0,0.3,0.1), name = expression(log~diatoms["BT"]~"%")) +
-  scale_x_continuous(name = expression(log~fuco["UPLC"]~"%"))
+  scale_y_continuous(breaks=pretty_breaks(n=5), labels= scales::percent,  name = expression(log~diatoms["BT"]~"%")) +
+  scale_x_continuous(breaks=pretty_breaks(n=4), labels= scales::percent,  name = expression(log~fuco["UPLC"]~"%")) +
+  scale_color_manual(values=investigator_colors,
+                    name="Site",
+                    breaks=c("Chris","Bella","Whit","Tristan"),
+                    labels=c("SRL", "LV", "PR", "RMNP"))+
+    theme(legend.position="none")
 diatoms1_covariates
+
 ```
 
 Relative abundances
@@ -560,14 +588,21 @@ anova(ANCOVA_diatoms1_add,ANCOVA_diatoms1_intxn)
 
 Pigment concentrations
 ```{r, echo=FALSE}
-diatoms2_covariates <- ggplot(data_fuco, aes(y=log_BT_diat,x=log_UPLC_diat, color=investigator, fill=investigator)) +
-  geom_point(size=3) +
-     geom_smooth(method = "lm", se=FALSE) +
+diatoms2_covariates <- ggplot(data_fuco, aes(y=log_BT_diat,x=log_UPLC_diat, color=investigator)) +
+  geom_point(size=3, alpha = 0.6,  position = position_jitter())+
+  geom_smooth(method = "lm", se=FALSE) +
   ggtitle("Diatoms")+
-    expand_limits(y=0.8,x=0.2)+
-  scale_y_continuous(name = expression(log~diatoms["BT"]~(mu*g/cm^2))) +
-  scale_x_continuous(name = expression(log~fuco["UPLC"]~(mu*g/cm^2)))
+  expand_limits(y=0.8,x=0.2)+
+  scale_y_continuous(breaks=pretty_breaks(n=5), name = expression(log~diatoms["BT"]~(mu*g/cm^2))) +
+  scale_x_continuous(breaks=pretty_breaks(n=5), name = expression(log~fuco["UPLC"]~(mu*g/cm^2))) +
+  scale_color_manual(values=investigator_colors,
+                    name="Sample site",
+                    breaks=c("Chris","Bella","Whit","Tristan"),
+                    labels=c("SRL", "LV", "PR", "RMNP"))+
+    theme(legend.position="none")
 diatoms2_covariates
+
+
 ```
 
 Pigment concentrations
@@ -613,14 +648,21 @@ r.squaredGLMM(Fit2_fuco) ##Note: this provides a marginal R2m and conditional R2
 #####ANCOVA cyano + investigator (proxy for site)
 Relative abundances
 ```{r, echo=FALSE}
-cyano1_covariates <- ggplot(data_myxo_full, aes(y=sqrt_BT_cyano_perc,x=sqrt_UPLC_myxo_perc, color=investigator, fill=investigator)) +
-  geom_point(size=3) +
+cyano1_covariates <- ggplot(data_myxo_full, aes(y=sqrt_BT_cyano_perc,x=sqrt_UPLC_myxo_perc, color=investigator)) +
+  geom_point(size=3, alpha = 0.6,  position = position_jitter())+
    geom_smooth(method = "lm", se=FALSE) +
-  ggtitle("Cyano")+
-  expand_limits(y=1.0,x=1.0)+
-  scale_y_continuous(breaks=seq(0,1.0,0.1), name = expression(sqrt~cyano["BT"]~"%")) +
-  scale_x_continuous(name = expression(sqrt~myxo["UPLC"]~"%"))
+  ggtitle("Cyanobacteria")+
+  expand_limits(y=1.0,x=0.4)+
+  scale_y_continuous(breaks=pretty_breaks(n=5), labels= scales::percent, name = expression(sqrt~cyano["BT"]~"%")) +
+  scale_x_continuous(breaks=pretty_breaks(n=5), labels= scales::percent, name = expression(sqrt~myxo["UPLC"]~"%"))+
+  scale_color_manual(values=investigator_colors,
+                    name="Sample site",
+                    breaks=c("Chris","Bella","Whit","Tristan"),
+                    labels=c("SRL", "LV", "PR", "RMNP"))+
+    theme(legend.position="none")
 cyano1_covariates
+
+
 ```
 
 Relative abundances
@@ -641,14 +683,22 @@ anova(ANCOVA_cyano1_add,ANCOVA_cyano1_intxn)
 
 Pigment concentrations
 ```{r, echo=FALSE}
-cyano2_covariates <- ggplot(data_myxo_full, aes(y=sqrt_BT_cyano,x=sqrt_UPLC_myxo, color=investigator, fill=investigator)) +
-  geom_point(size=3) +
-     geom_smooth(method = "lm", se=FALSE) +
-  ggtitle("Cyano")+
+cyano2_covariates <- ggplot(data_myxo_full, aes(y=sqrt_BT_cyano,x=sqrt_UPLC_myxo, color=investigator)) +
+  geom_point(size=3, alpha = 0.6,  position = position_jitter())+
+  geom_smooth(method = "lm", se=FALSE) +
+  ggtitle("Cyanobacteria")+
     expand_limits(y=0.8,x=0.2)+
-  scale_y_continuous(name = expression(sqrt~cyano["BT"]~(mu*g/cm^2))) +
-  scale_x_continuous(name = expression(sqrt~myxo["UPLC"]~(mu*g/cm^2)))
+  scale_y_continuous(breaks=pretty_breaks(n=5),name = expression(sqrt~cyano["BT"]~(mu*g/cm^2))) +
+  scale_x_continuous(breaks=pretty_breaks(n=5),name = expression(sqrt~myxo["UPLC"]~(mu*g/cm^2))) +
+  scale_color_manual(values=investigator_colors,
+                    name="Sample site",
+                    breaks=c("Chris","Bella","Whit","Tristan"),
+                    labels=c("SRL", "LV", "PR", "RMNP"))+
+    theme(legend.position="none")
 cyano2_covariates
+
+
+
 ```
 
 Pigment concentrations
@@ -692,14 +742,22 @@ r.squaredGLMM(Fit2_myxo) ##Note: this provides a marginal R2m and conditional R2
 ##Total chl
 #####ANCOVA chla + investigator
 ```{r ANCOVA chla, echo=FALSE}
-chla_investigator <- ggplot(data_chla_total, aes(y=log_BT_chla,x=log_UPLC_chla, color=investigator, fill=investigator)) +
-  geom_point(size=3) +
-   geom_smooth(method = "lm", se=FALSE) +
-  ggtitle(expression(paste("Total chlorophyll ", italic("a"))))+
+chla_investigator <- ggplot(data_chla_total, aes(y=log_BT_chla,x=log_UPLC_chla, color=investigator)) +
+  geom_point(size=3, alpha = 0.6,  position = position_jitter())+
+  geom_smooth(method = "lm", se=FALSE) +
+  ggtitle(expression(paste(bold("Total chlorophyll "), bolditalic("a"))))+
   expand_limits(x=1.0, y=1.0)+
-  scale_y_continuous(name = expression(log~Chl~italic("a")["BT"]~(mu*g/cm^2))) +
-  scale_x_continuous(name = expression(log~Chl~italic("a")["UPLC"]~(mu*g/cm^2)))
+  scale_y_continuous(breaks=pretty_breaks(n=5), name = expression(log~Chl~italic("a")["BT"]~(mu*g/cm^2))) +
+  scale_x_continuous(breaks=pretty_breaks(n=5), name = expression(log~Chl~italic("a")["UPLC"]~(mu*g/cm^2))) +
+  scale_color_manual(values=investigator_colors,
+                    name="Sample site",
+                    breaks=c("Chris","Bella","Whit","Tristan"),
+                    labels=c("SRL", "LV", "PR", "RMNP")) +
+  theme(legend.position="right")
 chla_investigator
+
+
+
 ```
 
 ```{r,tidy=TRUE, collapse=TRUE}
@@ -731,4 +789,35 @@ qqPlot(residuals(Fit1_chla))
 
 summary(Fit1_chla)
 r.squaredGLMM(Fit1_chla) ##Note: this provides a marginal R2m and conditional R2c. Marginal R2 quantifies only the variance explained by the fixed factor, while conditional R2 quantifies variance explained by fixed and random factors. 
+```
+
+#ANCOVA combined plot
+```{r, echo=FALSE, tidy=TRUE}
+library(grid) 
+library(ggpubr)
+library(gridExtra)
+
+
+###UPDATED STACKED FIGURE FOR MANUSCRIPT (Figure 2)
+chla_panel_ancova <- ggarrange(NULL,chla_investigator,NULL,
+                        ncol=3,nrow=1,
+                        widths=c(0.2,0.8,0.2),
+                        labels=c("","A",""),
+                        legend=NULL)
+all_stacked_ancova <- ggarrange(chla_panel_ancova,
+               ggarrange(
+                        greens1_covariates, greens2_covariates,
+                        diatoms1_covariates, diatoms2_covariates,
+                        cyano1_covariates , cyano2_covariates ,
+          align="hv",
+          ncol = 2, nrow = 3,
+          labels = c("B", "C", "D", "E", "F", "G")),
+          nrow=2,
+          widths = c(4,4), heights = c(0.3,1.0))
+ggsave("figures/ANCOVA_combined_12x16.tiff", width=12, height=16,units="in")
+ggsave("figures/ANCOVA_combined_10x16.tiff", width=10, height=16,units="in")
+
+
+
+
 ```
