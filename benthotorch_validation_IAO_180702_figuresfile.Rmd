@@ -44,23 +44,29 @@ benthotorch_validation_short$investigator <- factor(benthotorch_validation_short
 
 # Summary of data
 
-```{r subset, results="hide" }
+```{r subset, results="hide" , fig.width=8}
 #Fuco data subset
 data_fuco <- benthotorch_validation_short %>%
   filter(pigment_ID=="fuco") %>%
   filter(mass_ug_cm2 < 1) %>% # extreme removing outliers
-  mutate(log_UPLC_diat = log10(mass_ug_cm2 + 1 -min(mass_ug_cm2)),
-         # translate and then transform because of negative values
-         log_UPLC_diat_perc = log10(perc_diat_UPLC + 1 -min(perc_diat_UPLC)),
-         log_BT_diat = log10(bentho_diatom + 1 -min(bentho_diatom)),
-         log_BT_diat_perc = log10(bentho_diatom_percent + 1 -min(bentho_diatom_percent))) %>%
-  select(run_ID, pigment_ID,log_UPLC_diat, log_UPLC_diat_perc,  log_BT_diat, log_BT_diat_perc, investigator)
+  mutate(log_UPLC_diat = log10(mass_ug_cm2 + .01),
+         log_UPLC_diat_perc = log10(perc_diat_UPLC + .01),
+         log_BT_diat = log10(bentho_diatom + .01),
+         log_BT_diat_perc = log10(bentho_diatom_percent + 0.01)) %>%
+  select(run_ID, pigment_ID,log_UPLC_diat, log_UPLC_diat_perc, perc_diat_UPLC,bentho_diatom_percent, log_BT_diat, log_BT_diat_perc, investigator)
+
+
+
+benthotorch_validation_short %>%
+  filter(pigment_ID=="fuco") %>%
+  select(bentho_diatom_percent)
+
 
 #Chl a total data subset
 data_chla_total <- benthotorch_validation_short %>%
   filter(pigment_ID=="chla_total") %>%
-  mutate(log_UPLC_chla = log10(mass_ug_cm2 + 1-min(mass_ug_cm2)),
-         log_BT_chla = log10(bentho_totalchla + 1-min(bentho_totalchla)))
+  mutate(log_UPLC_chla = log10(mass_ug_cm2 + 0.01),
+         log_BT_chla = log10(bentho_totalchla + 0.01))
 
 #Green subset
 data_chlb_total <- benthotorch_validation_short %>%
@@ -70,7 +76,7 @@ data_chlb_total <- benthotorch_validation_short %>%
          sqrt_UPLC_chlb = sqrt(mass_ug_cm2),
          sqrt_BT_green_perc = sqrt(bentho_green_percent),
          sqrt_UPLC_chlb_perc = sqrt(perc_green_UPLC)) %>%
-  select(run_ID, pigment_ID, mass_ug_cm2, sqrt_BT_green, sqrt_UPLC_chlb, sqrt_BT_green_perc,  sqrt_UPLC_chlb_perc, bentho_green_percent,investigator)
+  select(run_ID, pigment_ID, mass_ug_cm2, sqrt_BT_green, sqrt_UPLC_chlb, sqrt_BT_green_perc,  perc_green_UPLC, sqrt_UPLC_chlb_perc, bentho_green_percent,investigator)
 
 
 #Cyano subset all
@@ -143,8 +149,8 @@ green1 <- ggplot(data_chlb_total, aes(y=sqrt_BT_green_perc,x=sqrt_UPLC_chlb_perc
                 parse = TRUE) +
      ggtitle("Green algae")+
     expand_limits(y=c(0,1.0),x=c(0,0.8))+
-  scale_y_continuous(breaks=pretty_breaks(n=5), labels= scales::percent, name = expression("sqrt"~green["BT"]~"")) +
-  scale_x_continuous(breaks=pretty_breaks(n=5), labels= scales::percent, name = expression("sqrt"~chlb["UPLC"]~""))
+  scale_y_continuous(breaks=pretty_breaks(), name = expression("sqrt"~rel.~abund.~green["BT"]~"")) +
+  scale_x_continuous(breaks=pretty_breaks(), name = expression("sqrt"~rel.~abund.~chl~italic("b")["UPLC"]~""))
 
 
 
@@ -184,8 +190,11 @@ green_low <- ggplot(Chlb_total_low, aes(y=sqrt_BT_green_perc,x=sqrt_UPLC_chlb_pe
                 parse = TRUE) +
      ggtitle("Green algae (below breakpoint)")+
   expand_limits(y=c(0,1.0),x=c(0,0.12))+
-  scale_y_continuous(breaks=pretty_breaks(), labels= scales::percent, name = expression("SR"~green["BT"]~"")) +
-  scale_x_continuous(breaks=c(0,0.02,.04,.06,.08,0.10,.12), labels=c("0%","2%", "4%", "6%","8%","10%", "12%"),  name = expression("SR"~chlb["UPLC"]~""))
+  scale_y_continuous(breaks=pretty_breaks(), name = expression("sqrt"~rel.~abund.~green["BT"]~"")) +
+  scale_x_continuous(breaks=pretty_breaks(), name = expression("sqrt"~rel.~abund.~chl~italic("b")["UPLC"]~""))
+
+  # scale_y_continuous(breaks=pretty_breaks(), labels= scales::percent, name = expression("SR"~green["BT"]~"")) +
+  # scale_x_continuous(breaks=c(0,0.02,.04,.06,.08,0.10,.12), labels=c("0%","2%", "4%", "6%","8%","10%", "12%"),  name = expression("SR"~chlb["UPLC"]~""))
 
 
 
@@ -197,8 +206,12 @@ green_high <- ggplot(Chlb_total_high, aes(y=sqrt_BT_green_perc,x=sqrt_UPLC_chlb_
                 parse = TRUE) +
      ggtitle("Green algae (above breakpoint)")+
   expand_limits(y=c(0,1.0),x=c(0,0.8))+
-  scale_y_continuous(breaks=seq(0, 1.0, 0.2), labels= scales::percent, name = expression("SR"~green["BT"]~"")) +
-  scale_x_continuous(breaks=c(0,0.2,0.4,0.6,0.8), labels=c("0%","20%", "40%", "60%","80%"), name = expression("SR"~chlb["UPLC"]~""))
+  scale_y_continuous(breaks=pretty_breaks(), name = expression("sqrt"~rel.~abund.~green["BT"]~"")) +
+  scale_x_continuous(breaks=pretty_breaks(), name = expression("sqrt"~rel.~abund.~chl~italic("b")["UPLC"]~""))
+
+
+  # scale_y_continuous(breaks=seq(0, 1.0, 0.2), labels= scales::percent, name = expression("SR"~green["BT"]~"")) +
+  # scale_x_continuous(breaks=c(0,0.2,0.4,0.6,0.8), labels=c("0%","20%", "40%", "60%","80%"), name = expression("SR"~chlb["UPLC"]~""))
 
 
 
@@ -212,25 +225,25 @@ nonzero_chlb_perc_lm <- lm(sqrt_BT_green_perc~sqrt_UPLC_chlb_perc, data=data_chl
 summary(nonzero_chlb_perc_lm)
 
 green_nonzero2 <- ggplot(data_chlb_total_nonzeros, aes(y=sqrt_BT_green,x=sqrt_UPLC_chlb)) +
-  geom_point(size=1) +
+  geom_point(size=3, alpha = 0.3,  position = position_jitter())+
    geom_smooth(method = "lm", se=FALSE, color="black") +
    stat_poly_eq(formula = green_nonzero_eqn_2, 
                 label.x.npc="right", label.y.npc="top", aes(label = paste(..eq.label.., ..rr.label.., sep = "*plain(\",\")~")), 
                 parse = TRUE) +
      ggtitle("Green algae (non-zeros)")+
-  scale_y_continuous(name = expression("SR"~green["BT"]~(mu*g/cm^2))) +
-  scale_x_continuous(name = expression("SR"~chlb["UPLC"]~(mu*g/cm^2)))
+  scale_y_continuous(name = expression("sqrt"~green["BT"]~(mu*g/cm^2))) +
+  scale_x_continuous(name = expression("sqrt"~chlb["UPLC"]~(mu*g/cm^2)))
 
 
 green_nonzero1 <- ggplot(data_chlb_total_nonzeros, aes(y=sqrt_BT_green_perc,x=sqrt_UPLC_chlb_perc)) +
-  geom_point(size=1) +
+  geom_point(size=3, alpha = 0.3,  position = position_jitter())+
    geom_smooth(method = "lm", se=FALSE, color="black") +
    stat_poly_eq(formula = green_nonzero_eqn_1, 
                 label.x.npc="right", label.y.npc="top", aes(label = paste(..eq.label.., ..rr.label.., sep = "*plain(\",\")~")), 
                 parse = TRUE) +
      ggtitle("Green algae (non-zeros)")+
-  scale_y_continuous(labels= scales::percent, name = expression("SR"~green["BT"]~"")) +
-  scale_x_continuous(name = expression("SR"~chlb["UPLC"]~""))
+  scale_y_continuous(breaks=pretty_breaks(),name = expression("sqrt"~rel.~abund.~green["BT"]~"")) +
+  scale_x_continuous(breaks=pretty_breaks(),name = expression("sqrt"~rel.~abund.~chl~italic("b")["UPLC"]~""))
 
 
 ```
@@ -262,8 +275,10 @@ cyano1 <- ggplot(data_myxo_full, aes(y=sqrt_BT_cyano_perc,x=sqrt_UPLC_myxo_perc)
                 parse = TRUE) +
   ggtitle("Cyanobacteria")+
   expand_limits(y=1.0,x=0.4)+
-  scale_y_continuous(labels= scales::percent, breaks=seq(0,1.0,0.25), name = expression("sqrt"~cyano["BT"]~"")) +
-  scale_x_continuous(breaks=c(0,0.1,0.2,0.3,0.4), labels=c("0%","10%", "20%", "30%","40%"), name = expression("sqrt"~myxo["UPLC"]~""))
+  scale_y_continuous(breaks=pretty_breaks(), name = expression("sqrt"~rel.~abund.~cyano["BT"]~"")) +
+  scale_x_continuous(breaks=pretty_breaks(), name = expression("sqrt"~rel.~abund.~myxo["UPLC"]~""))
+
+
 
 
 cyano2 <- ggplot(data_myxo_full, aes(y=sqrt_BT_cyano,x=sqrt_UPLC_myxo)) +
@@ -290,9 +305,8 @@ cyano3 <- ggplot(data_myxo_nonzeros, aes(y=sqrt_BT_cyano_perc,x=sqrt_UPLC_myxo_p
                 parse = TRUE) +
   ggtitle("Cyanobacteria (without zeros)")+
       expand_limits(y=c(0,1.0),x=c(0,0.4))+
-
-  scale_y_continuous(labels= scales::percent, breaks=seq(0,1.0,0.25), name = expression("sqrt"~cyano["BT"]~"")) +
-  scale_x_continuous(breaks=c(0,0.1,0.2,0.3,0.4), labels=c("0%","10%", "20%", "30%","40%"), name = expression("sqrt"~myxo["UPLC"]~""))
+  scale_y_continuous(breaks=pretty_breaks(), name = expression("sqrt"~rel.~abund.~cyano["BT"]~"")) +
+  scale_x_continuous(breaks=pretty_breaks(), name = expression("sqrt"~rel.~abund.~myxo["UPLC"]~""))
 
 
 cyano4 <- ggplot(data_myxo_nonzeros, aes(y=sqrt_BT_cyano,x=sqrt_UPLC_myxo)) +
@@ -319,7 +333,7 @@ cyano4
 
 ```{r diatom plots, include=FALSE}
 glimpse(data_fuco)
-diat_lm1_eqn <- data_fuco$log_BT_diat_perc ~data_fuco$log_UPLC_diat_perc
+diat_lm1_eqn <- data_fuco$log_BT_diat_perc~data_fuco$log_UPLC_diat_perc
 diat_lm2_eqn <- data_fuco$log_BT_diat~data_fuco$log_UPLC_diat
 
 
@@ -331,8 +345,9 @@ diatoms1 <- ggplot(data_fuco, aes(y=log_BT_diat_perc,x=log_UPLC_diat_perc)) +
                 parse = TRUE) +
   ggtitle("Diatoms")+
   expand_limits(y=0.3,x=0.3)+
-  scale_y_continuous(breaks=c(0,0.1,0.2,0.3), labels=c("0%","10%", "20%", "30%"), name = expression(log~diatoms["BT"]~"")) +
-  scale_x_continuous(breaks=c(0,0.1,0.2,0.3), labels=c("0%","10%", "20%", "30%"), name = expression(log~fuco["UPLC"]~""))
+  scale_y_continuous(breaks=pretty_breaks(), name = expression("log"~rel.~abund.~diatoms["BT"]~"")) +
+  scale_x_continuous(breaks=pretty_breaks(), name = expression("log"~rel.~abund.~fuco["UPLC"]~""))
+
 
 
 diatoms2 <- ggplot(data_fuco, aes(y=log_BT_diat,x=log_UPLC_diat)) +
@@ -343,8 +358,8 @@ diatoms2 <- ggplot(data_fuco, aes(y=log_BT_diat,x=log_UPLC_diat)) +
                 parse = TRUE) +
   ggtitle("Diatoms")+
     expand_limits(y=0.80,x=0.20)+
-  scale_y_continuous(breaks=seq(0, 0.80, 0.20),name = expression(log~diatoms["BT"]~(mu*g/cm^2))) +
-  scale_x_continuous(breaks=seq(0, 0.2, 0.05), name = expression(log~fuco["UPLC"]~(mu*g/cm^2)))
+  scale_y_continuous(breaks=pretty_breaks(n=6),name = expression(log~diatoms["BT"]~(mu*g/cm^2))) +
+  scale_x_continuous(breaks=pretty_breaks(n=6), name = expression(log~fuco["UPLC"]~(mu*g/cm^2)))
 
 ```
 ```{r, echo=FALSE}
@@ -375,7 +390,7 @@ chla1 <- ggplot(data_chla_total, aes(y=log_BT_chla,x=log_UPLC_chla)) +
 chla1
 ```
 
-
+##**MS PLOTS**
 ```{r all figures, echo=FALSE, include=FALSE}
 library(grid) 
 library(ggpubr)
@@ -398,7 +413,7 @@ all_stacked <- ggarrange(chla_panel,
           labels = c("B", "C", "D", "E", "F", "G", "H","I")),
           nrow=2,
           widths = c(4,4), heights = c(0.3,1.0))
-# ggsave("figures/figure2-A_allpigments.tiff", width=12, height=16,units="in")
+ggsave("figures/figure2-A_allpigments_transformation_fixed_12x16.tiff", width=12, height=16, units="in")
 
 
 chla_panel <- ggarrange(NULL,chla1,NULL,
@@ -416,7 +431,7 @@ all_stacked <- ggarrange(chla_panel,
           labels = c("B", "C", "D", "E", "F", "G", "H","I")),
           nrow=2,
           widths = c(4,4), heights = c(0.3,1.0))
-# ggsave("figures/figure2-B_allpigments.tiff", width=8, height=16,units="in")
+ggsave("figures/figure2-B_allpigments_transformation_fixed_8x16.tiff", width=8, height=16,units="in")
 
 
 #Breakpoint figure
@@ -426,7 +441,7 @@ breakpoint <-
           ncol = 2, nrow = 1,
           labels = c("A", "B"),
           widths = c(4,4), heights = c(0.3,0.3))
-# ggsave("figures/figure3_green_breakpoints.tiff", width=12, height=8,units="in")
+ggsave("figures/figure3_green_breakpoints_transformation_fixed.tiff", width=12, height=8,units="in")
 
 #Non-zero green figures
 green_nonzeros <-
@@ -435,7 +450,7 @@ green_nonzeros <-
           ncol = 2, nrow = 1,
           labels = c("A", "B"),
           widths = c(4,4), heights = c(0.3,0.3))
-# ggsave("figures/figX_green_nonzeros.png", width=12, height=8,units="in")
+ggsave("figures/figX_green_nonzeros_transformation_fixed.png", width=12, height=8,units="in")
 
 #Non-zero green figures with regular green
 green_allfigs <-
@@ -445,7 +460,7 @@ green_allfigs <-
           ncol = 2, nrow = 2,
           labels = c("A", "B", "C","D"),
           widths = c(4,4), heights = c(0.3,0.3))
-# ggsave("figures/figX_green_allfigs.png", width=12, height=12,units="in")
+ggsave("figures/figX_green_allfigs_transformation_fixed.png", width=12, height=12,units="in")
 
 
 
@@ -464,8 +479,8 @@ greens1_covariates <- ggplot(data_chlb_total,
   geom_smooth(method = "lm", se=FALSE, show.legend=FALSE) +
   ggtitle("Green algae")+
   expand_limits(y=0.9,x=0.8)+
-  scale_y_continuous(breaks=pretty_breaks(n=5), labels= scales::percent, name = expression("sqrt"~green["BT"]~"%")) +
-  scale_x_continuous(breaks=pretty_breaks(n=5), labels= scales::percent, name = expression("sqrt"~chlb["UPLC"]~"%")) +
+  scale_y_continuous(breaks=pretty_breaks(), name = expression("sqrt"~rel.~abund.~green["BT"]~"")) +
+  scale_x_continuous(breaks=pretty_breaks(), name = expression("sqrt"~rel.~abund.~chl~italic("b")["UPLC"]~""))+
   scale_color_manual(values=investigator_colors,
                     name="Site",
                     breaks=c("Chris","Bella","Whit","Tristan"),
@@ -474,7 +489,20 @@ greens1_covariates <- ggplot(data_chlb_total,
 greens1_covariates
 
 
-
+# greens1_covariates_untransformed <- ggplot(data_chlb_total,
+#   aes(y=bentho_green_percent,x=perc_green_UPLC,color=investigator)) +
+#   geom_point(size=3, alpha = 0.6,  position = position_jitter())+
+#   geom_smooth(method = "lm", se=FALSE, show.legend=FALSE) +
+#   ggtitle("Green algae - untransformed")+
+#   expand_limits(y=0.9,x=0.8)+
+#   scale_y_continuous(breaks=pretty_breaks(n=5), labels= scales::percent, name = expression("sqrt"~green["BT"]~"%")) +
+#   scale_x_continuous(breaks=pretty_breaks(n=5), labels= scales::percent, name = expression("sqrt"~chlb["UPLC"]~"%")) +
+#   scale_color_manual(values=investigator_colors,
+#                     name="Site",
+#                     breaks=c("Chris","Bella","Whit","Tristan"),
+#                     labels=c("SRL", "LV", "PR", "RMNP"))+
+#   theme(legend.position="none")
+# greens1_covariates_untransformed
 ```
 
 ```{r,tidy=TRUE, collapse=TRUE}
@@ -553,14 +581,14 @@ r.squaredGLMM(Fit2_chlb) ##Note: this provides a marginal R2m and conditional R2
 ##Diatoms
 #####ANCOVA diatoms + investigator (proxy for site)
 Relative abundances
-```{r, echo=FALSE}
+```{r, echo=FALSE, fig.width=8}
 diatoms1_covariates <- ggplot(data_fuco, aes(y=log_BT_diat_perc,x=log_UPLC_diat_perc, color=investigator)) +
   geom_point(size=3, alpha = 0.6,  position = position_jitter())+
   geom_smooth(method = "lm", se=FALSE) +
   ggtitle("Diatoms")+
   expand_limits(y=0.3,x=0.3)+
-  scale_y_continuous(breaks=pretty_breaks(n=5), labels= scales::percent,  name = expression(log~diatoms["BT"]~"%")) +
-  scale_x_continuous(breaks=pretty_breaks(n=4), labels= scales::percent,  name = expression(log~fuco["UPLC"]~"%")) +
+  scale_y_continuous(breaks=pretty_breaks(), name = expression("log"~rel.~abund.~diatoms["BT"]~"")) +
+  scale_x_continuous(breaks=pretty_breaks(), name = expression("log"~rel.~abund.~fuco["UPLC"]~"")) +
   scale_color_manual(values=investigator_colors,
                     name="Site",
                     breaks=c("Chris","Bella","Whit","Tristan"),
@@ -568,6 +596,33 @@ diatoms1_covariates <- ggplot(data_fuco, aes(y=log_BT_diat_perc,x=log_UPLC_diat_
     theme(legend.position="none")
 diatoms1_covariates
 
+# diatoms1_covariates_corrected <- ggplot(data_fuco, aes(y=log_BT_diat_perc2,x=log_UPLC_diat_perc2, color=investigator)) +
+#   geom_point(size=3, alpha = 0.6,  position = position_jitter())+
+#   geom_smooth(method = "lm", se=FALSE) +
+#   ggtitle("Diatoms - corrected")+
+#   expand_limits(y=0.3,x=0.3)+
+#   scale_y_continuous(breaks=pretty_breaks(n=5), labels= scales::percent,  name = expression(log~diatoms["BT"]~"%")) +
+#   scale_x_continuous(breaks=pretty_breaks(n=4), labels= scales::percent,  name = expression(log~fuco["UPLC"]~"%")) +
+#   scale_color_manual(values=investigator_colors,
+#                     name="Site",
+#                     breaks=c("Chris","Bella","Whit","Tristan"),
+#                     labels=c("SRL", "LV", "PR", "RMNP"))+
+#     theme(legend.position="none")
+# diatoms1_covariates_corrected
+# 
+# diatoms1_covariates_untransformed <- ggplot(data_fuco, aes(y=bentho_diatom_percent,x=perc_diat_UPLC, color=investigator)) +
+#   geom_point(size=3, alpha = 0.6,  position = position_jitter())+
+#   geom_smooth(method = "lm", se=FALSE) +
+#   ggtitle("Diatoms - untransformed")+
+#   expand_limits(y=0.3,x=0.3)+
+#   scale_y_continuous(breaks=pretty_breaks(n=5), labels= scales::percent,  name = expression(diatoms["BT"]~"%")) +
+#   scale_x_continuous(breaks=pretty_breaks(n=4), labels= scales::percent,  name = expression(fuco["UPLC"]~"%")) +
+#   scale_color_manual(values=investigator_colors,
+#                     name="Site",
+#                     breaks=c("Chris","Bella","Whit","Tristan"),
+#                     labels=c("SRL", "LV", "PR", "RMNP"))+
+#     theme(legend.position="none")
+# diatoms1_covariates_untransformed
 ```
 
 Relative abundances
@@ -653,8 +708,8 @@ cyano1_covariates <- ggplot(data_myxo_full, aes(y=sqrt_BT_cyano_perc,x=sqrt_UPLC
    geom_smooth(method = "lm", se=FALSE) +
   ggtitle("Cyanobacteria")+
   expand_limits(y=1.0,x=0.4)+
-  scale_y_continuous(breaks=pretty_breaks(n=5), labels= scales::percent, name = expression(sqrt~cyano["BT"]~"%")) +
-  scale_x_continuous(breaks=pretty_breaks(n=5), labels= scales::percent, name = expression(sqrt~myxo["UPLC"]~"%"))+
+  scale_y_continuous(breaks=pretty_breaks(), name = expression("sqrt"~rel.~abund.~cyano["BT"]~"")) +
+  scale_x_continuous(breaks=pretty_breaks(), name = expression("sqrt"~rel.~abund.~myxo["UPLC"]~"")) +
   scale_color_manual(values=investigator_colors,
                     name="Sample site",
                     breaks=c("Chris","Bella","Whit","Tristan"),
@@ -814,8 +869,8 @@ all_stacked_ancova <- ggarrange(chla_panel_ancova,
           labels = c("B", "C", "D", "E", "F", "G")),
           nrow=2,
           widths = c(4,4), heights = c(0.3,1.0))
-ggsave("figures/ANCOVA_combined_12x16.tiff", width=12, height=16,units="in")
-ggsave("figures/ANCOVA_combined_10x16.tiff", width=10, height=16,units="in")
+ggsave("figures/ANCOVA_combined_12x16_transformation_fixed.tiff", width=12, height=16,units="in")
+ggsave("figures/ANCOVA_combined_10x16_transformation_fixed.tiff", width=10, height=16,units="in")
 
 
 
